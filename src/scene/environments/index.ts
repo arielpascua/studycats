@@ -1,0 +1,601 @@
+/**
+ * The four worlds (spec §12 M4). Each is a floating slab with the same desk cluster on it, so
+ * the timer always sits in the same place and only the world around it changes.
+ *
+ * Everything static is merged per colour by `BoxBatch` — a whole room lands in roughly a dozen
+ * draw calls, which is what keeps the ≤300 budget comfortable once eight cats are walking.
+ */
+
+import * as THREE from 'three';
+import { ENVIRONMENTS, type EnvironmentDef, type EnvironmentId } from '../../data/environments';
+import { C, hex, mixHex, PALETTE } from '../../data/palette';
+import type { DayPhase } from '../../core/time';
+import { BoxBatch, box, boxGeo, disposeTree, flat, mergedBoxes, type BoxSpec } from '../voxel';
+import { createLaptop, createMug, createPlant, createWindow, type Laptop, type Mug, type Window } from '../props/desk';
+import type { Obstacle } from '../cats/catBrain';
+
+export interface BuiltEnvironment {
+  id: EnvironmentId;
+  def: EnvironmentDef;
+  group: THREE.Group;
+  laptop: Laptop;
+  mug: Mug;
+  window: Window | null;
+  /** Prop bounding circles the cats path around. */
+  obstacles: Obstacle[];
+  /** Per-environment accent lights, tinted by day phase. */
+  accents: THREE.Light[];
+  /** Where the fire is, for spark emission. Null when the world has no fire. */
+  firePoint: THREE.Vector3 | null;
+  update(dt: number, elapsed: number, phase: DayPhase, reducedMotion: boolean): void;
+  dispose(): void;
+}
+
+/**
+ * Half-extent of the shadow-receiving ground patch. Must stay >= the shadow camera's own
+ * orthographic half-extent in world.ts, or the band this exists to remove comes back.
+ */
+export const SHADOW_HALF = 8;
+
+/**
+ * The ground the viewer is standing on.
+ *
+ * This used to be a floating island: a small slab with a tapered underside, which is what made
+ * the scene read as an object on a table. Worse, that underside hung to y = -1.2 and was the
+ * single corner that held the camera furthest away. The ground now simply covers the shell, so
+ * it runs off the bottom and sides of the frame at every angle.
+ */
+function buildGround(def: EnvironmentDef, topColor: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'ground';
+  const shell = def.shell;
+
+  // The ground is TWO meshes, and the split is not cosmetic.
+  //
+  // The shadow camera is a tight orthographic box around the play area (world.ts), because that
+  // is the only place anything casts. Ground outside that box still samples the shadow map, and
+  // at the frustum edge the sampler clamps — which paints a hard dark band right across the
+  // far grass. Letting only the inner patch receive shadows removes the band completely and
+  // costs nothing: nothing out there was ever going to cast one.
+  const outer =
+    shell.kind === 'open'
+      ? box({ w: shell.groundHalf * 2, h: 0.2, d: shell.groundHalf * 2, y: -0.1 }, topColor)
+      : box(
+          {
+            w: shell.maxX - shell.minX,
+            h: 0.2,
+            d: shell.maxZ - shell.minZ,
+            x: (shell.minX + shell.maxX) / 2,
+            y: -0.1,
+            z: (shell.minZ + shell.maxZ) / 2,
+          },
+          topColor,
+        );
+  outer.castShadow = false;
+  outer.receiveShadow = false;
+  g.add(outer);
+
+  // Sits a hair proud of the outer ground so the two coplanar quads cannot z-fight.
+  const inner = box({ w: SHADOW_HALF * 2.2, h: 0.2, d: SHADOW_HALF * 2.2, y: -0.097 }, topColor);
+  inner.castShadow = false;
+  inner.receiveShadow = true;
+  g.add(inner);
+
+  return g;
+}
+
+/**
+ * The four walls and the ceiling that put the viewer inside the room.
+ *
+ * The two FAR walls keep the exact coordinates they always had — inner faces at
+ * `shell.minZ + 0.24` and `shell.minX + 0.24` — so the window, shelf, skirting and every
+ * furniture slot anchor stay put. Only the near two are new, and they sit behind the eye where
+ * they are never actually seen; their job is to guarantee no sky can reach a frame edge.
+ *
+ * Nothing here casts a shadow. `mergedBoxes` defaults castShadow to true, and a 16-unit wall
+ * inside the shadow camera's box draws a hard straight terminator across the middle of the
+ * visible floor.
+ */
+function buildShellWalls(def: EnvironmentDef, wallColor: number, sideColor: number, ceilingColor: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'shell';
+  const shell = def.shell;
+  if (shell.kind !== 'walls') return g;
+
+  const w = shell.maxX - shell.minX;
+  const d = shell.maxZ - shell.minZ;
+  const cx = (shell.minX + shell.maxX) / 2;
+  const cz = (shell.minZ + shell.maxZ) / 2;
+  const h = shell.ceiling;
+
+  const far = mergedBoxes(
+    [{ w, h, d: 0.24, x: cx, y: h / 2, z: shell.minZ + 0.12 }],
+    wallColor,
+  );
+  const side = mergedBoxes(
+    [
+      { w: 0.24, h, d, x: shell.minX + 0.12, y: h / 2, z: cz },
+      // The two near walls, behind the viewer.
+      { w: 0.24, h, d, x: shell.maxX - 0.12, y: h / 2, z: cz },
+      { w, h, d: 0.24, x: cx, y: h / 2, z: shell.maxZ - 0.12 },
+    ],
+    sideColor,
+  );
+  const ceiling = mergedBoxes([{ w, h: 0.24, d, x: cx, y: h + 0.12, z: cz }], ceilingColor);
+
+  for (const mesh of [far, side, ceiling]) {
+    if (!mesh) continue;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    g.add(mesh);
+  }
+  return g;
+}
+
+/** A low ridge at the horizon, so an open world has a silhouette instead of a hard ground edge. */
+function buildHorizonRim(def: EnvironmentDef, color: number): THREE.Group | null {
+  const g = new THREE.Group();
+  g.name = 'rim';
+  const shell = def.shell;
+  if (shell.kind !== 'open') return null;
+
+  const radius = shell.groundHalf * 0.62;
+  const specs: BoxSpec[] = [];
+  const segments = 40;
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    const height = shell.rimHeight * (0.7 + ((i * 7) % 5) * 0.12);
+    specs.push({
+      w: radius * 0.22,
+      h: height,
+      d: radius * 0.22,
+      x: Math.sin(a) * radius,
+      y: height / 2,
+      z: Math.cos(a) * radius,
+      ry: a,
+    });
+  }
+  const rim = mergedBoxes(specs, color);
+  if (!rim) return null;
+  rim.castShadow = false;
+  rim.receiveShadow = false;
+  g.add(rim);
+  return g;
+}
+
+/** Desk + chair, shared by every world so the timer never moves. */
+function buildDesk(batch: BoxBatch): void {
+  const wood = C.wood;
+  const dark = C.woodDark;
+  batch.add({ w: 3.0, h: 0.14, d: 1.5, x: 0.4, y: 1.0, z: -1.5 }, wood);
+  batch.addMany(
+    [
+      { w: 0.16, h: 1.0, d: 0.16, x: -0.9, y: 0.5, z: -0.9 },
+      { w: 0.16, h: 1.0, d: 0.16, x: 1.7, y: 0.5, z: -0.9 },
+      { w: 0.16, h: 1.0, d: 0.16, x: -0.9, y: 0.5, z: -2.1 },
+      { w: 0.16, h: 1.0, d: 0.16, x: 1.7, y: 0.5, z: -2.1 },
+    ],
+    dark,
+  );
+  // Chair
+  batch.add({ w: 1.0, h: 0.12, d: 1.0, x: 0.4, y: 0.62, z: -0.1 }, wood);
+  batch.add({ w: 1.0, h: 0.9, d: 0.12, x: 0.4, y: 1.1, z: 0.4 }, dark);
+  batch.addMany(
+    [
+      { w: 0.1, h: 0.62, d: 0.1, x: -0.02, y: 0.31, z: -0.48 },
+      { w: 0.1, h: 0.62, d: 0.1, x: 0.82, y: 0.31, z: -0.48 },
+      { w: 0.1, h: 0.62, d: 0.1, x: -0.02, y: 0.31, z: 0.32 },
+      { w: 0.1, h: 0.62, d: 0.1, x: 0.82, y: 0.31, z: 0.32 },
+    ],
+    dark,
+  );
+}
+
+/* ------------------------------------------------------------------ worlds */
+
+function buildRoom(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[]; windowProp: Window } {
+  const batch = new BoxBatch();
+  // No reference to def.floor here any more: the room's geometry is the SHELL, and def.floor is
+  // now purely the gameplay footprint the cats stay inside.
+
+  // Floorboards
+  // Boards run the full length of the shell, not of the play area, or the floor stops in
+  // mid-air a couple of metres from the desk.
+  const shell = def.shell;
+  const boards: BoxSpec[] = [];
+  const boardSpan = shell.maxZ - shell.minZ;
+  const boardCount = Math.ceil(boardSpan / 0.8);
+  for (let i = 0; i < boardCount; i++) {
+    boards.push({
+      w: shell.maxX - shell.minX - 0.4,
+      h: 0.02,
+      d: 0.72,
+      x: (shell.minX + shell.maxX) / 2,
+      y: 0.011,
+      z: shell.minZ + 0.5 + i * 0.8,
+    });
+  }
+  batch.addMany(boards, C.woodDark);
+
+  // Skirting along the two FAR walls only — the near two are behind the viewer.
+  // Note these use shell.minZ / shell.minX, which evaluate to exactly the old -d/2 and -w/2:
+  // the far walls have not moved, so nothing mounted on them moves either.
+  batch.add({
+    w: shell.maxX - shell.minX,
+    h: 0.22,
+    d: 0.3,
+    x: (shell.minX + shell.maxX) / 2,
+    y: 0.11,
+    z: shell.minZ + 0.15,
+  }, hex(PALETTE.paper));
+  batch.add({
+    w: 0.3,
+    h: 0.22,
+    d: shell.maxZ - shell.minZ,
+    x: shell.minX + 0.15,
+    y: 0.11,
+    z: (shell.minZ + shell.maxZ) / 2,
+  }, hex(PALETTE.paper));
+
+  // A shelf with three books
+  batch.add({ w: 1.8, h: 0.1, d: 0.4, x: -3.2, y: 2.4, z: shell.minZ + 0.4 }, C.wood);
+  batch.addMany(
+    [
+      { w: 0.16, h: 0.5, d: 0.3, x: -3.8, y: 2.7, z: shell.minZ + 0.4 },
+      { w: 0.14, h: 0.42, d: 0.3, x: -3.6, y: 2.66, z: shell.minZ + 0.4 },
+      { w: 0.18, h: 0.54, d: 0.3, x: -3.4, y: 2.72, z: shell.minZ + 0.4 },
+    ],
+    hex(PALETTE.pinkDeep),
+  );
+
+  buildDesk(batch);
+  const statics = batch.build('room');
+
+  const windowProp = createWindow('plain');
+  windowProp.group.position.set(2.0, 0, shell.minZ + 0.26);
+  statics.add(windowProp.group);
+
+  const plant = createPlant(PALETTE.leaf, PALETTE.rug);
+  plant.position.set(-4.2, 0, -2.2);
+  statics.add(plant);
+
+  return {
+    statics,
+    obstacles: [
+      { x: 0.4, z: -1.5, r: 1.5 }, // desk
+      { x: 0.4, z: 0.15, r: 0.7 }, // chair
+      { x: -4.2, z: -2.2, r: 0.5 }, // plant
+    ],
+    windowProp,
+  };
+}
+
+function buildPicnic(_def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[] } {
+  const batch = new BoxBatch();
+
+  // Tufts of taller grass scattered around the edge
+  const tufts: BoxSpec[] = [];
+  for (let i = 0; i < 46; i++) {
+    const a = (i / 46) * Math.PI * 2;
+    const r = 3.6 + ((i * 7) % 5) * 0.35;
+    tufts.push({ w: 0.14, h: 0.26 + ((i * 3) % 4) * 0.08, d: 0.14, x: Math.sin(a) * r, y: 0.13, z: Math.cos(a) * r * 0.8 });
+  }
+  batch.addMany(tufts, hex(PALETTE.leafDark));
+
+  // Checked blanket
+  const checks: BoxSpec[] = [];
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      if ((r + c) % 2 === 0) continue;
+      checks.push({ w: 0.56, h: 0.02, d: 0.56, x: -1.7 + c * 0.6, y: 0.035, z: 0.6 + r * 0.6 });
+    }
+  }
+  batch.add({ w: 3.2, h: 0.03, d: 3.2, x: -0.5, y: 0.02, z: 1.8 }, hex(PALETTE.paper));
+  batch.addMany(checks, hex(PALETTE.pink));
+
+  // Basket
+  batch.add({ w: 0.8, h: 0.5, d: 0.6, x: -2.6, y: 0.25, z: 2.2 }, C.wood);
+  batch.add({ w: 0.84, h: 0.1, d: 0.64, x: -2.6, y: 0.52, z: 2.2 }, C.woodDark);
+
+  buildDesk(batch);
+  const statics = batch.build('picnic');
+
+  // A little tree at the back
+  const treeTrunk = box({ w: 0.42, h: 2.4, d: 0.42, x: 4.0, y: 1.2, z: -2.6 }, C.woodDark);
+  const canopy = mergedBoxes(
+    [
+      { w: 2.2, h: 0.9, d: 2.0, y: 2.7 },
+      { w: 1.5, h: 0.8, d: 1.4, y: 3.3, x: 0.2 },
+    ],
+    C.leaf,
+  )!;
+  canopy.position.set(4.0, 0, -2.6);
+  statics.add(treeTrunk, canopy);
+
+  return {
+    statics,
+    obstacles: [
+      { x: 0.4, z: -1.5, r: 1.5 },
+      { x: 0.4, z: 0.15, r: 0.7 },
+      { x: 4.0, z: -2.6, r: 0.7 },
+      { x: -2.6, z: 2.2, r: 0.5 },
+    ],
+  };
+}
+
+function buildBonfire(_def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[]; fire: THREE.Group; firePoint: THREE.Vector3 } {
+  const batch = new BoxBatch();
+
+  const ground: BoxSpec[] = [];
+  for (let i = 0; i < 30; i++) {
+    const a = (i / 30) * Math.PI * 2;
+    ground.push({ w: 0.4, h: 0.1, d: 0.4, x: Math.sin(a) * (3.8 + (i % 3) * 0.4), y: 0.05, z: Math.cos(a) * (3.2 + (i % 4) * 0.3) });
+  }
+  batch.addMany(ground, hex(PALETTE.stone));
+
+  // Fire ring
+  const ring: BoxSpec[] = [];
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    ring.push({ w: 0.32, h: 0.22, d: 0.32, x: -2.4 + Math.sin(a) * 0.95, y: 0.11, z: 1.8 + Math.cos(a) * 0.95, ry: a });
+  }
+  batch.addMany(ring, hex(PALETTE.stone));
+
+  // Sitting logs
+  batch.addMany(
+    [
+      { w: 1.8, h: 0.36, d: 0.36, x: -2.4, y: 0.18, z: 3.4 },
+      { w: 0.36, h: 0.36, d: 1.6, x: -4.3, y: 0.18, z: 1.6, ry: 0.2 },
+    ],
+    C.woodDark,
+  );
+
+  buildDesk(batch);
+  const statics = batch.build('bonfire');
+
+  // The fire itself: three stacked, animated boxes with an unlit core.
+  const fire = new THREE.Group();
+  fire.name = 'fire';
+  fire.position.set(-2.4, 0, 1.8);
+  const logs = mergedBoxes(
+    [
+      { w: 0.9, h: 0.2, d: 0.2, y: 0.12, rz: 0.1 },
+      { w: 0.2, h: 0.2, d: 0.9, y: 0.12, rz: -0.1 },
+    ],
+    C.woodDark,
+  )!;
+  fire.add(logs);
+  const flames: THREE.Mesh[] = [];
+  const flameSpecs = [
+    { s: 0.5, y: 0.42, c: hex(PALETTE.ember) },
+    { s: 0.34, y: 0.72, c: hex(PALETTE.emberHot) },
+    { s: 0.2, y: 0.95, c: hex(PALETTE.butter) },
+  ];
+  for (const f of flameSpecs) {
+    const m = new THREE.Mesh(boxGeo(f.s, f.s, f.s), flat(f.c));
+    m.position.y = f.y;
+    m.castShadow = false;
+    fire.add(m);
+    flames.push(m);
+  }
+  (fire as THREE.Group & { flames: THREE.Mesh[] }).flames = flames;
+  statics.add(fire);
+
+  // Marshmallow on a stick, leaning on a log — the bonfire's signature detail.
+  const stick = new THREE.Group();
+  stick.position.set(-3.5, 0.36, 2.7);
+  stick.rotation.z = -0.5;
+  stick.rotation.y = 0.6;
+  const rod = box({ w: 0.05, h: 1.4, d: 0.05, y: 0.7 }, C.woodDark);
+  const mallow = box({ w: 0.16, h: 0.16, d: 0.16, y: 1.42 }, hex(PALETTE.cream));
+  stick.add(rod, mallow);
+  stick.name = 'marshmallowStick';
+  statics.add(stick);
+
+  return {
+    statics,
+    fire,
+    firePoint: new THREE.Vector3(-2.4, 0.6, 1.8),
+    obstacles: [
+      { x: 0.4, z: -1.5, r: 1.5 },
+      { x: 0.4, z: 0.15, r: 0.7 },
+      { x: -2.4, z: 1.8, r: 1.1 },
+      { x: -2.4, z: 3.4, r: 0.6 },
+    ],
+  };
+}
+
+function buildCafe(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[]; windowProp: Window; lamps: THREE.PointLight[] } {
+  const batch = new BoxBatch();
+
+  // Chequerboard café floor
+  const shell = def.shell;
+  const tiles: BoxSpec[] = [];
+  const cols = Math.ceil((shell.maxX - shell.minX) / 1.0);
+  const rows = Math.ceil((shell.maxZ - shell.minZ) / 0.95);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if ((r + c) % 2 === 0) continue;
+      tiles.push({ w: 0.9, h: 0.02, d: 0.9, x: shell.minX + 0.6 + c * 1.0, y: 0.012, z: shell.minZ + 0.6 + r * 0.95 });
+    }
+  }
+  batch.addMany(tiles, hex(PALETTE.paper2));
+
+  batch.add({
+    w: shell.maxX - shell.minX,
+    h: 0.3,
+    d: 0.32,
+    x: (shell.minX + shell.maxX) / 2,
+    y: 1.0,
+    z: shell.minZ + 0.18,
+  }, C.wood);
+
+  // Counter + cups
+  batch.add({ w: 2.6, h: 1.05, d: 0.8, x: -3.6, y: 0.52, z: -2.4 }, C.woodDark);
+  batch.add({ w: 2.7, h: 0.1, d: 0.9, x: -3.6, y: 1.08, z: -2.4 }, C.wood);
+  batch.addMany(
+    [
+      { w: 0.18, h: 0.2, d: 0.18, x: -4.3, y: 1.23, z: -2.4 },
+      { w: 0.18, h: 0.2, d: 0.18, x: -4.05, y: 1.23, z: -2.5 },
+      { w: 0.18, h: 0.2, d: 0.18, x: -3.8, y: 1.23, z: -2.35 },
+    ],
+    hex(PALETTE.paper),
+  );
+
+  buildDesk(batch);
+  const statics = batch.build('cafe');
+
+  const windowProp = createWindow('city');
+  windowProp.group.position.set(2.4, 0, shell.minZ + 0.26);
+  statics.add(windowProp.group);
+
+  // Two warm pendant lamps
+  const lamps: THREE.PointLight[] = [];
+  for (const x of [-1.6, 3.0]) {
+    const shade = box({ w: 0.6, h: 0.3, d: 0.6, y: 3.0 }, hex(PALETTE.peach));
+    shade.position.x = x;
+    shade.position.z = -1.0;
+    const cord = box({ w: 0.05, h: 1.0, d: 0.05, y: 3.6 }, hex(PALETTE.ink));
+    cord.position.x = x;
+    cord.position.z = -1.0;
+    statics.add(shade, cord);
+
+    const light = new THREE.PointLight(hex(PALETTE.peach), 2.2, 7, 2);
+    light.position.set(x, 2.75, -1.0);
+    statics.add(light);
+    lamps.push(light);
+  }
+
+  return {
+    statics,
+    windowProp,
+    lamps,
+    obstacles: [
+      { x: 0.4, z: -1.5, r: 1.5 },
+      { x: 0.4, z: 0.15, r: 0.7 },
+      { x: -3.6, z: -2.4, r: 1.3 },
+    ],
+  };
+}
+
+/* ------------------------------------------------------------------ assembly */
+
+export function buildEnvironment(id: EnvironmentId): BuiltEnvironment {
+  const def = ENVIRONMENTS[id];
+  const group = new THREE.Group();
+  group.name = `env:${id}`;
+
+  const groundColor =
+    id === 'picnic' ? C.grass : id === 'bonfire' ? hex(PALETTE.soil) : hex(PALETTE.wood);
+  group.add(buildGround(def, groundColor));
+
+  if (def.shell.kind === 'walls') {
+    group.add(
+      buildShellWalls(
+        def,
+        hex(id === 'cafe' ? PALETTE.woodDark : PALETTE.lav),
+        hex(id === 'cafe' ? PALETTE.wood : PALETTE.lavDeep),
+        hex(id === 'cafe' ? PALETTE.paper2 : PALETTE.paper),
+      ),
+    );
+  } else {
+    const rim = buildHorizonRim(def, id === 'bonfire' ? hex('#4E4374') : hex(PALETTE.leafDark));
+    if (rim) group.add(rim);
+  }
+
+  let obstacles: Obstacle[] = [];
+  let windowProp: Window | null = null;
+  let firePoint: THREE.Vector3 | null = null;
+  let fireGroup: (THREE.Group & { flames?: THREE.Mesh[] }) | null = null;
+  const accents: THREE.Light[] = [];
+
+  switch (id) {
+    case 'picnic': {
+      const built = buildPicnic(def);
+      group.add(built.statics);
+      obstacles = built.obstacles;
+      break;
+    }
+    case 'bonfire': {
+      const built = buildBonfire(def);
+      group.add(built.statics);
+      obstacles = built.obstacles;
+      firePoint = built.firePoint;
+      fireGroup = built.fire as THREE.Group & { flames?: THREE.Mesh[] };
+      const fireLight = new THREE.PointLight(hex(PALETTE.ember), 3.4, 11, 2);
+      fireLight.position.copy(built.firePoint);
+      fireLight.castShadow = true;
+      fireLight.shadow.mapSize.set(512, 512);
+      group.add(fireLight);
+      accents.push(fireLight);
+      break;
+    }
+    case 'cafe': {
+      const built = buildCafe(def);
+      group.add(built.statics);
+      obstacles = built.obstacles;
+      windowProp = built.windowProp;
+      accents.push(...built.lamps);
+      break;
+    }
+    case 'room':
+    default: {
+      const built = buildRoom(def);
+      group.add(built.statics);
+      obstacles = built.obstacles;
+      windowProp = built.windowProp;
+      break;
+    }
+  }
+
+  const laptop = createLaptop();
+  laptop.group.position.set(0.35, 1.07, -1.55);
+  laptop.group.rotation.y = 0.06;
+  group.add(laptop.group);
+  accents.push(laptop.light);
+
+  const mug = createMug();
+  mug.group.position.set(1.45, 1.07, -1.15);
+  group.add(mug.group);
+
+  let flicker = 0;
+
+  return {
+    id,
+    def,
+    group,
+    laptop,
+    mug,
+    window: windowProp,
+    obstacles,
+    accents,
+    firePoint,
+    update(dt, elapsed, phase, reducedMotion) {
+      laptop.update(dt, elapsed, reducedMotion);
+      mug.update(dt, reducedMotion);
+
+      if (windowProp) {
+        const sky = def.sky[phase];
+        const night = phase === 'night' || phase === 'dusk';
+        windowProp.setSky(night ? mixHex(sky, PALETTE.night, 0.35) : sky, phase === 'night');
+      }
+
+      if (fireGroup?.flames) {
+        flicker += dt;
+        const flames = fireGroup.flames;
+        for (let i = 0; i < flames.length; i++) {
+          const s = reducedMotion ? 1 : 1 + Math.sin(flicker * (7 + i * 2.3) + i) * 0.16;
+          flames[i].scale.set(s, 1 + (s - 1) * 1.8, s);
+          flames[i].rotation.y = reducedMotion ? 0 : Math.sin(flicker * 2 + i) * 0.3;
+        }
+        const light = accents[0];
+        if (light instanceof THREE.PointLight) {
+          light.intensity = reducedMotion ? 3.2 : 3.0 + Math.sin(flicker * 11) * 0.5 + Math.sin(flicker * 4.3) * 0.35;
+        }
+      }
+    },
+    dispose() {
+      disposeTree(group);
+    },
+  };
+}

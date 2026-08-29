@@ -1,0 +1,8 @@
+{
+  "status": "partial",
+  "task": "unspecified task",
+  "result": "See artifacts.",
+  "verification": "not_run",
+  "artifact": null,
+  "nextStep": "Run the verifying command via `cdt-verify -- <cmd>` to record trusted evidence."
+}

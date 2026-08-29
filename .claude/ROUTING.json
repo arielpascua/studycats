@@ -1,0 +1,34 @@
+{
+  "version": "1",
+  "generatedAt": "2026-08-29T15:32:12.814Z",
+  "promptRedacted": "can we extend the walls and the floor? so it feels that we are in the room.",
+  "promptHash": "39187196367a73fddfb118b16d0fdd264e9f22b27d6f608abc7536586031a6e1",
+  "tier": "T1",
+  "model": "sonnet",
+  "confidence": 0.9,
+  "advisory": true,
+  "enhanced": false,
+  "degraded": false,
+  "risk": {
+    "flagged": false,
+    "domains": [],
+    "floor": "none"
+  },
+  "securityReview": false,
+  "agents": [],
+  "gates": [
+    "fmt",
+    "lint",
+    "typecheck",
+    "unit",
+    "integration",
+    "e2e",
+    "build",
+    "smoke",
+    "review"
+  ],
+  "safety": {
+    "findings": []
+  },
+  "notes": "substantive build → Sonnet"
+}

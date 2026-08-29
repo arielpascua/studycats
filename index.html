@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#C7BFEA" />
+    <title>Study With Cats</title>
+    <meta
+      name="description"
+      content="A pomodoro timer that is also a place. Study alongside a diorama of voxel cats; finish a session and they get a snack."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23C7BFEA'/%3E%3Crect x='7' y='12' width='18' height='13' fill='%23FBF2F4'/%3E%3Crect x='7' y='7' width='4' height='6' fill='%23FBF2F4'/%3E%3Crect x='21' y='7' width='4' height='6' fill='%23F0B7C9'/%3E%3Crect x='11' y='16' width='3' height='3' fill='%233B2A44'/%3E%3Crect x='18' y='16' width='3' height='3' fill='%233B2A44'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas
+      id="stage"
+      tabindex="0"
+      role="application"
+      aria-label="The diorama where your cats live. Drag to turn the room, scroll to zoom. With the canvas focused: arrow keys turn, plus and minus zoom, 0 resets the view."
+    ></canvas>
+
+    <noscript>
+      <div class="boot-message">
+        <h1>Study With Cats</h1>
+        <p>This is a little 3D room, so it needs JavaScript switched on. Nothing is sent anywhere — it all runs here.</p>
+      </div>
+    </noscript>
+
+    <div id="boot" class="boot-message" hidden>
+      <h1>Study With Cats</h1>
+      <p id="boot-text">Waking the cats…</p>
+    </div>
+
+    <!-- Announcements for screen readers: mode changes, rewards, quest completions. -->
+    <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+
+    <main id="ui" class="ui" hidden>
+      <!-- Top rail: what you have, and the way into everything else. -->
+      <div class="rail rail--top">
+        <div class="rail__group">
+          <button type="button" class="chip chip--coin" id="coin-chip" aria-label="Fish coins. Opens the shop.">
+            <span class="chip__icon" aria-hidden="true">🐟</span>
+            <span class="chip__value" id="coin-value">0</span>
+          </button>
+          <button type="button" class="chip" id="streak-chip" aria-label="Study streak. Opens your stats.">
+            <span class="chip__icon" aria-hidden="true">🔥</span>
+            <span class="chip__value" id="streak-value">0</span>
+          </button>
+        </div>
+
+        <nav class="rail__group" aria-label="Panels">
+          <button type="button" class="icon-btn" data-panel="cats" aria-haspopup="dialog"><span aria-hidden="true">🐈</span><span class="icon-btn__label">CATS</span></button>
+          <button type="button" class="icon-btn" data-panel="shop" aria-haspopup="dialog"><span aria-hidden="true">🛍</span><span class="icon-btn__label">SHOP</span></button>
+          <button type="button" class="icon-btn" data-panel="stats" aria-haspopup="dialog"><span aria-hidden="true">📊</span><span class="icon-btn__label">STATS</span></button>
+          <button type="button" class="icon-btn" data-panel="catalogue" aria-haspopup="dialog"><span aria-hidden="true">📖</span><span class="icon-btn__label">BOOK</span></button>
+          <button type="button" class="icon-btn" data-panel="settings" aria-haspopup="dialog"><span aria-hidden="true">⚙</span><span class="icon-btn__label">SETUP</span></button>
+        </nav>
+      </div>
+
+      <!-- Scene switcher, anchored to the left edge. -->
+      <div class="scenes" role="group" aria-label="Where are we studying?">
+        <p class="scenes__label">WHERE ARE WE STUDYING?</p>
+        <div class="scenes__list" id="scene-list"></div>
+      </div>
+
+      <!-- The timer chip. -->
+      <section class="timer" aria-label="Pomodoro timer">
+        <div class="timer__head">
+          <span class="timer__mode" id="timer-mode">READY</span>
+          <div class="dots" id="session-dots" role="img" aria-label="Session progress"></div>
+        </div>
+
+        <p class="timer__clock" id="timer-clock">25:00</p>
+
+        <label class="timer__task">
+          <span class="sr-only">What are you studying today?</span>
+          <input
+            type="text"
+            id="task-input"
+            maxlength="80"
+            placeholder="what are you studying today?"
+            autocomplete="off"
+            enterkeyhint="done"
+          />
+        </label>
+
+        <div class="timer__controls">
+          <button type="button" class="btn btn--primary" id="btn-start">
+            <span id="btn-start-label">START</span>
+          </button>
+          <button type="button" class="btn btn--ghost" id="btn-reset" aria-label="Reset the timer (R)">↻</button>
+          <button type="button" class="btn btn--ghost" id="btn-skip" aria-label="Skip to the next session (S)">⏭</button>
+        </div>
+
+        <p class="timer__hint" id="timer-hint">space start · r reset · s skip — drag the room to turn it, scroll to zoom</p>
+      </section>
+
+      <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+      <div class="panels" id="panels"></div>
+
+      <!-- Photo mode takes the whole screen and hides everything above. -->
+      <div class="photo" id="photo" hidden></div>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "name": "study-with-cats-3d",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Tamagotchi x Pomodoro - a cozy HD-pixel voxel diorama study timer.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4318 --strictPort --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "probe:geometry": "node tools/geometry-probe.mjs http://127.0.0.1:4318/ --selftest",
+    "probe:design": "impeccable detect http://127.0.0.1:4318/",
+    "gate": "npm run typecheck && npm run test && npm run build",
+    "gate:full": "npm run gate && npm run probe:geometry && npm run probe:design",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "three": "^0.180.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "jsdom": "^26.1.0",
+    "playwright": "^1.55.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

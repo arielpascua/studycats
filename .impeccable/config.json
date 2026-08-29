@@ -1,0 +1,15 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreValues": [],
+    "waivers": [
+      {
+        "rule": "wide-tracking",
+        "value": "letter-spacing: 0.10em",
+        "reason": "Applies only to .icon-btn__label, .scenes__label and .field__label — short ALL-CAPS micro-labels set in Silkscreen, a bitmap display face. The rule's own guidance permits wide tracking for exactly this case ('Reserve wide tracking for short uppercase labels only'); the URL scan reads computed styles and cannot see that these are uppercase labels rather than body copy. No prose in this app is tracked: body text runs at the Quicksand default. Verified by reading every 0.10em declaration in src/style.css.",
+        "reviewed": "2026-08-29"
+      }
+    ]
+  },
+  "notes": "Waivers are decisions, not suppressions. Anything added here must name the elements it covers and why the rule does not apply to them. See DESIGN.md for the type and colour contract these rules are checking against."
+}
