@@ -5,7 +5,7 @@
 
 ## Suggested prompt
 
-Goal: make it closer to minecraft cats instead
+Goal: the othe color of cats is outside the box of the body. make the color patches of the cat more surreal
 
 Deterministic framing (no external model was used):
 - Suggested tier T1, model sonnet (advisory).

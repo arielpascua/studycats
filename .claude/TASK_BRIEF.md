@@ -1,10 +1,10 @@
 # Task Brief
 
-Generated: 2026-08-30T13:38:04.865Z · Tier T1 · Model sonnet · Confidence 0.9 (heuristic) · Advisory
+Generated: 2026-08-30T13:47:56.900Z · Tier T1 · Model sonnet · Confidence 0.9 (heuristic) · Advisory
 
 ## Original request (redacted)
 
-make it closer to minecraft cats instead
+the othe color of cats is outside the box of the body. make the color patches of the cat more surreal
 
 ## Routing (advisory — the orchestrator decides)
 

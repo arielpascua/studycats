@@ -25,6 +25,17 @@ import { box, boxGeo, canvasTexture, disposeTree, flat, mat, mergedBoxes, redraw
 import type { CosmeticSlot, Outfit } from '../../data/cosmetics';
 import { buildCosmetic, mountFor, outfitEntries, type WornItem } from './wardrobe';
 
+/**
+ * The body box, in one place.
+ *
+ * The cat's proportions are encoded in FOUR files — this factory, the animator's rest heights,
+ * and the wardrobe's mount points — and every time the body has moved, something has been left
+ * behind. The markings shipped hanging off the side of the cat because `catAnimator` hardcoded
+ * the OLD body height and re-applied it every frame, which beat whatever the factory placed.
+ * Anything that needs to know where the body is imports this instead of restating it.
+ */
+export const CAT_BODY = { w: 0.4, h: 0.38, d: 0.86, y: 0.55 } as const;
+
 export type CatEmotion = 'neutral' | 'happy' | 'sleep' | 'eat' | 'love' | 'surprised' | 'blink';
 
 export interface CatParts {
@@ -130,42 +141,95 @@ function drawFace(ctx: CanvasRenderingContext2D, breed: BreedDef, emotion: CatEm
   }
 }
 
-/** Patch boxes layered over the body, per breed style. */
+/**
+ * How much a wrapping band is inflated past the body, so it does not z-fight with the surface it
+ * lies on. Purely visual relief.
+ */
+export const PATCH_RELIEF = 0.02;
+
+/**
+ * The most a marking may protrude from the body, in any axis.
+ *
+ * Deliberately larger than PATCH_RELIEF: a spot is *allowed* to straddle the top edge and break
+ * the silhouette, which is what makes a leopard read as a leopard. What is not allowed is a
+ * marking that leaves the cat. For scale, the markings that shipped hanging off the flank
+ * overhung by 0.15 to 0.21 — three to four times this — so this catches the real failure while
+ * still leaving room for deliberate surface relief.
+ */
+export const PATCH_MAX_PROUD = 0.05;
+
+/**
+ * Coat markings, laid over the body.
+ *
+ * These are deliberately BOLD — whole bands wrapping the barrel, a rear half in another colour,
+ * a sash across the shoulders — rather than the timid scatter of small dots they used to be. At
+ * the distance the game is actually played from, a subtle marking is no marking; you get one
+ * silhouette and one strong shape per cat, and it should be legible across the room.
+ *
+ * Every spec here is expressed against CAT_BODY, so when the body changes shape the markings
+ * either follow or the test fails. They used to be authored against a body that was 0.72 wide
+ * and stayed that way after it shrank to 0.40, which is how a cat shipped wearing a pink slab
+ * bigger than itself.
+ */
 function patchSpecs(breed: BreedDef): BoxSpec[] {
+  const { w, h, d } = CAT_BODY;
+  // A band that wraps right around the barrel: proud on all four sides, thin along the length.
+  const band = (z: number, thickness: number): BoxSpec => ({
+    w: w + PATCH_RELIEF,
+    h: h + PATCH_RELIEF,
+    d: thickness,
+    y: 0,
+    z,
+  });
+
   switch (breed.style) {
-    case 'patch':
-      return [
-        { w: 0.5, h: 0.34, d: 0.62, x: 0.16, y: 0.06, z: -0.02 },
-        { w: 0.3, h: 0.26, d: 0.3, x: -0.3, y: 0.12, z: 0.2 },
-      ];
-    case 'spots':
-      return [
-        { w: 0.22, h: 0.2, d: 0.22, x: 0.24, y: 0.2, z: 0.1 },
-        { w: 0.18, h: 0.16, d: 0.18, x: -0.12, y: 0.24, z: -0.18 },
-        { w: 0.2, h: 0.18, d: 0.2, x: 0.05, y: 0.05, z: 0.26 },
-        { w: 0.16, h: 0.14, d: 0.16, x: -0.3, y: 0.1, z: 0.05 },
-      ];
     case 'tabby':
+      // Five hard rings of uneven width. Reads as a tiger rather than a tabby, on purpose.
+      return [band(-d * 0.36, 0.09), band(-d * 0.16, 0.14), band(d * 0.04, 0.07), band(d * 0.22, 0.12), band(d * 0.4, 0.08)];
+
+    case 'patch':
+      // Split the cat. The whole back half is the other colour, with one slab riding up over the
+      // shoulder — asymmetric on purpose, so no two sides of the cat agree.
       return [
-        { w: 0.62, h: 0.08, d: 0.14, x: 0, y: 0.28, z: -0.18 },
-        { w: 0.62, h: 0.08, d: 0.14, x: 0, y: 0.28, z: 0.06 },
-        { w: 0.5, h: 0.08, d: 0.12, x: 0, y: 0.26, z: 0.28 },
+        { w: w + PATCH_RELIEF, h: h + PATCH_RELIEF, d: d * 0.42, y: 0, z: -d * 0.27 },
+        { w: w * 0.55, h: h + PATCH_RELIEF, d: d * 0.26, x: w * 0.26, y: 0, z: d * 0.2 },
       ];
+
+    case 'spots':
+      // Big blocks straddling the top edge, so they break the silhouette instead of decorating
+      // a flat side.
+      return [
+        { w: 0.17, h: 0.17, d: 0.17, x: w * 0.34, y: h * 0.34, z: -d * 0.28 },
+        { w: 0.13, h: 0.13, d: 0.13, x: -w * 0.38, y: h * 0.22, z: -d * 0.04 },
+        { w: 0.15, h: 0.15, d: 0.15, x: w * 0.28, y: -h * 0.2, z: d * 0.24 },
+        { w: 0.12, h: 0.12, d: 0.12, x: -w * 0.3, y: h * 0.38, z: d * 0.36 },
+        { w: 0.14, h: 0.14, d: 0.14, x: w * 0.2, y: h * 0.42, z: d * 0.06 },
+      ];
+
     case 'tuxedo':
+      // A crisp bib and a belly that runs the whole length — the one marking that should read as
+      // tidy rather than wild.
       return [
-        { w: 0.34, h: 0.4, d: 0.3, x: 0, y: -0.02, z: 0.34 },
-        { w: 0.2, h: 0.16, d: 0.2, x: 0, y: -0.2, z: 0.24 },
+        { w: w * 0.62, h: h * 0.8, d: 0.16, y: -h * 0.1, z: d * 0.44 },
+        { w: w + PATCH_RELIEF, h: h * 0.34, d: d * 0.78, y: -h * 0.4, z: -d * 0.04 },
       ];
+
     case 'petals':
+      // A sash of blocks laid diagonally across the back, each turned a different way.
       return [
-        { w: 0.14, h: 0.06, d: 0.14, x: 0.2, y: 0.3, z: 0.1, ry: 0.6 },
-        { w: 0.12, h: 0.06, d: 0.12, x: -0.18, y: 0.3, z: -0.12, ry: -0.4 },
-        { w: 0.1, h: 0.05, d: 0.1, x: 0.05, y: 0.32, z: 0.3, ry: 1.1 },
+        { w: 0.15, h: 0.07, d: 0.15, x: w * 0.3, y: h * 0.5, z: d * 0.2, ry: 0.6 },
+        { w: 0.17, h: 0.07, d: 0.17, x: 0, y: h * 0.52, z: 0, ry: -0.35 },
+        { w: 0.14, h: 0.07, d: 0.14, x: -w * 0.3, y: h * 0.5, z: -d * 0.2, ry: 1.0 },
+        { w: 0.12, h: 0.06, d: 0.12, x: w * 0.15, y: h * 0.52, z: -d * 0.38, ry: -0.8 },
       ];
+
     default:
       return [];
   }
 }
+
+/** Exported for the test that stops a marking ever hanging off the cat again. */
+export const patchSpecsFor = patchSpecs;
 
 /**
  * Two stacked, narrowing boxes read convincingly as a triangular ear at this scale — and cost
@@ -210,8 +274,8 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
   // pass had a big round head on a squat body sitting almost on the floor, which is a different
   // animal entirely.
   const bodySpecs: BoxSpec[] = [
-    { w: 0.4, h: 0.38, d: 0.86, y: 0.55 },
-    { w: 0.34, h: 0.3, d: 0.16, y: 0.53, z: 0.46 }, // shoulders
+    { w: CAT_BODY.w, h: CAT_BODY.h, d: CAT_BODY.d, y: CAT_BODY.y },
+    { w: 0.34, h: 0.3, d: 0.16, y: CAT_BODY.y - 0.02, z: 0.46 }, // shoulders
   ];
   const body = mergedBoxes(bodySpecs, bodyColor)!;
   body.name = 'body';
@@ -219,7 +283,7 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
 
   const patches = mergedBoxes(patchSpecs(breed), patchColor);
   if (patches) {
-    patches.position.y = 0.55;
+    patches.position.y = CAT_BODY.y;
     patches.name = 'patches';
     root.add(patches);
   }

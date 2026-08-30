@@ -11,7 +11,7 @@
  */
 
 import * as THREE from 'three';
-import { setEmotion, type CatEmotion, type CatParts } from './catFactory';
+import { CAT_BODY, setEmotion, type CatEmotion, type CatParts } from './catFactory';
 import { damp, lerp, TAU } from '../voxel';
 
 export type CatPose =
@@ -259,7 +259,9 @@ export class CatAnimator {
     // The patches mesh rides the body, if this breed has one.
     const patches = p.root.getObjectByName('patches');
     if (patches) {
-      patches.position.y = 0.34 + L.bodyY;
+      // Must match the body's own rest height. This is re-set every frame, so a stale value
+      // here drags the markings off the body no matter what the factory placed them at.
+      patches.position.y = CAT_BODY.y + L.bodyY;
       patches.rotation.x = L.bodyPitch;
       patches.scale.set(L.squashX, L.squashY, L.squashX);
     }

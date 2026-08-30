@@ -312,8 +312,24 @@ Miss one and the head floats off the shoulders or a hat sinks into the skull:
 | Constant | Where | Why |
 |---|---|---|
 | `headPivot.position.y` rest height | `catAnimator.ts` | Hardcoded, and re-set every frame, so it beats the factory |
+| `patches.position.y` | `catAnimator.ts` | Same — this one shipped stale and dropped the markings off the flank |
 | `MOUNT.hat`, `MOUNT.charm` | `wardrobe.ts` | Ride the head |
 | `MOUNT.collar`, `MOUNT.cape` | `wardrobe.ts` | Ride the body |
+
+`CAT_BODY` in `catFactory.ts` is now the single source of truth for the body box, and the
+animator imports it rather than restating the number. `tests/cats.test.ts` asserts every marking
+stays on the body, and is proven against the exact specs that shipped hanging off it.
+
+### Markings
+
+Bold on purpose: whole bands wrapping the barrel, a rear half in another colour, a sash across
+the shoulders. At the distance the game is played from, a subtle marking is no marking. Every
+spec is expressed as a fraction of `CAT_BODY`, so markings follow the body when it changes shape
+instead of being left behind. Two separate margins matter and were once conflated:
+
+- `PATCH_RELIEF` (0.02) — how much a band is inflated so it does not z-fight the surface it lies on.
+- `PATCH_MAX_PROUD` (0.05) — the most anything may protrude. Larger, because a spot is *allowed*
+  to straddle the top edge and break the silhouette; what is not allowed is leaving the cat.
 
 The animator is otherwise safe to build against: it touches **only** `position`, `rotation` and
 `scale` on the pivots, and never reads a geometry dimension. It does look up three meshes by
