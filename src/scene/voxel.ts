@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 const geoCache = new Map<string, THREE.BoxGeometry>();
 const matCache = new Map<string, THREE.MeshToonMaterial>();
@@ -87,6 +88,70 @@ export interface BoxSpec {
   rx?: number;
   ry?: number;
   rz?: number;
+}
+
+const roundedCache = new Map<string, THREE.BufferGeometry>();
+
+/**
+ * A box with its edges taken off, cached like `boxGeo`.
+ *
+ * The world is deliberately hard-edged — a desk should look milled — but the CATS are the
+ * characters, and a character built from crates reads as scenery. Softening only their silhouette
+ * is the difference between a stack of boxes and something you want to pet, and it costs nothing
+ * at the draw-call level because rounded boxes merge exactly like square ones.
+ *
+ * The radius is clamped to just under half the smallest side, because RoundedBoxGeometry
+ * degenerates into a lump the moment the radius exceeds it.
+ */
+export function roundedGeo(w: number, h: number, d: number, radius = 0.06, segments = 2): THREE.BufferGeometry {
+  const r = Math.min(radius, Math.min(w, h, d) * 0.49);
+  const key = `${w}|${h}|${d}|${r.toFixed(3)}|${segments}`;
+  let g = roundedCache.get(key);
+  if (!g) {
+    g = new RoundedBoxGeometry(w, h, d, segments, r);
+    roundedCache.set(key, g);
+  }
+  return g;
+}
+
+/** `mergedBoxes`, but every box has soft edges. Same draw-call cost, same colour batching. */
+export function mergedRounded(
+  specs: readonly BoxSpec[],
+  color: number,
+  radius = 0.06,
+  opts: MatOptions = {},
+): THREE.Mesh | null {
+  if (specs.length === 0) return null;
+  const geos: THREE.BufferGeometry[] = [];
+  const m = new THREE.Matrix4();
+  const e = new THREE.Euler();
+  const q = new THREE.Quaternion();
+  const one = new THREE.Vector3(1, 1, 1);
+  for (const s of specs) {
+    const g = roundedGeo(s.w, s.h, s.d, radius).clone();
+    e.set(s.rx ?? 0, s.ry ?? 0, s.rz ?? 0);
+    q.setFromEuler(e);
+    m.compose(new THREE.Vector3(s.x ?? 0, s.y ?? 0, s.z ?? 0), q, one);
+    g.applyMatrix4(m);
+    geos.push(g);
+  }
+  const merged = mergeGeometries(geos, false);
+  for (const g of geos) g.dispose();
+  if (!merged) return null;
+  const mesh = new THREE.Mesh(merged, mat(color, opts));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/** A single soft-edged box, for parts that animate on their own and so cannot be merged. */
+export function roundedBox(spec: BoxSpec, color: number, radius = 0.06, opts: MatOptions = {}): THREE.Mesh {
+  const m = new THREE.Mesh(roundedGeo(spec.w, spec.h, spec.d, radius), mat(color, opts));
+  m.position.set(spec.x ?? 0, spec.y ?? 0, spec.z ?? 0);
+  m.rotation.set(spec.rx ?? 0, spec.ry ?? 0, spec.rz ?? 0);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
 }
 
 export function box(spec: BoxSpec, color: number, opts: MatOptions = {}): THREE.Mesh {

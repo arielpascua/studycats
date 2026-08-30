@@ -19,9 +19,10 @@
  */
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BREEDS, type BreedDef, type BreedId } from '../../data/breeds';
 import { hex } from '../../data/palette';
-import { box, boxGeo, canvasTexture, disposeTree, flat, mat, mergedBoxes, redrawCanvasTexture, type BoxSpec } from '../voxel';
+import { box, boxGeo, canvasTexture, disposeTree, flat, mat, mergedBoxes, mergedRounded, redrawCanvasTexture, roundedBox, toonGradient, type BoxSpec } from '../voxel';
 import type { CosmeticSlot, Outfit } from '../../data/cosmetics';
 import { buildCosmetic, mountFor, outfitEntries, type WornItem } from './wardrobe';
 
@@ -35,6 +36,8 @@ export interface CatParts {
   earL: THREE.Group;
   earR: THREE.Group;
   face: THREE.Mesh;
+  /** Both eyeballs as one textured mesh. Emotions squash it; the canvas draws the lids over it. */
+  eyes: THREE.Mesh;
   legs: [THREE.Group, THREE.Group, THREE.Group, THREE.Group];
   tail: THREE.Group[];
   /** Optional flourish holder (antenna, eye glow). */
@@ -62,16 +65,23 @@ function drawFace(ctx: CanvasRenderingContext2D, breed: BreedDef, emotion: CatEm
   const eyeR = 10;
   const eyeY = 4;
 
+  // The EYES ARE NO LONGER PAINTED HERE — they are real geometry (see buildEyes). A painted eye
+  // on a flat plane is the single biggest reason these cats read as boxes: at any distance the
+  // face is a sticker, and a sticker has no highlight that moves when the head turns.
+  //
+  // What survives on the canvas is everything that genuinely IS flat on a cat's face: the
+  // closed-eye line, the brow shape for a squint, the nose, the mouth and the blush.
   switch (emotion) {
     case 'sleep':
     case 'blink':
-      // ‾‾ closed eyes
+    case 'eat':
+      // ‾‾ closed lids, drawn over the eyeballs which shrink to nothing underneath.
       P(eyeL, eyeY + 1, 3, 1);
       P(eyeR, eyeY + 1, 3, 1);
       break;
     case 'happy':
     case 'love':
-      // ^‿^ — two carets
+      // ^‿^ — two carets, again over shrunken eyeballs.
       P(eyeL, eyeY + 1, 1, 1);
       P(eyeL + 1, eyeY, 1, 1);
       P(eyeL + 2, eyeY + 1, 1, 1);
@@ -79,22 +89,7 @@ function drawFace(ctx: CanvasRenderingContext2D, breed: BreedDef, emotion: CatEm
       P(eyeR + 1, eyeY, 1, 1);
       P(eyeR + 2, eyeY + 1, 1, 1);
       break;
-    case 'surprised':
-      P(eyeL, eyeY - 1, 3, 4);
-      P(eyeR, eyeY - 1, 3, 4);
-      P(eyeL + 1, eyeY, 1, 1, '#FFFFFF');
-      P(eyeR + 1, eyeY, 1, 1, '#FFFFFF');
-      break;
-    case 'eat':
-      P(eyeL, eyeY + 1, 3, 1);
-      P(eyeR, eyeY + 1, 3, 1);
-      break;
     default:
-      P(eyeL, eyeY, 3, 3);
-      P(eyeR, eyeY, 3, 3);
-      // A single specular pixel is what makes them read as alive.
-      P(eyeL + 2, eyeY, 1, 1, '#FFFFFF');
-      P(eyeR + 2, eyeY, 1, 1, '#FFFFFF');
       break;
   }
 
@@ -124,6 +119,70 @@ function drawFace(ctx: CanvasRenderingContext2D, breed: BreedDef, emotion: CatEm
     P(3, 1, 1, 1, '#E8788E');
     P(2, 2, 1, 1, '#E8788E');
   }
+}
+
+/**
+ * The eyes, as actual volume.
+ *
+ * Both eyes are ONE mesh: two spheres merged, sharing a single tiny canvas texture that carries
+ * the sclera, the iris, the pupil and the specular dot. That is what buys the whole effect for
+ * one extra draw call per cat instead of four — and the highlight now sits on a curved surface,
+ * so it slides as the head turns, which a painted dot cannot do.
+ */
+function eyeTexture(breed: BreedDef): THREE.CanvasTexture {
+  return canvasTexture(32, 32, (ctx) => {
+    ctx.fillStyle = '#FBF6EE';
+    ctx.fillRect(0, 0, 32, 32);
+    // Iris, then pupil, then the highlight — concentric and offset up-left, which is where the
+    // key light is in every room.
+    const disc = (cx: number, cy: number, r: number, colour: string) => {
+      ctx.fillStyle = colour;
+      for (let y = -r; y <= r; y++) {
+        const span = Math.round(Math.sqrt(Math.max(0, r * r - y * y)));
+        ctx.fillRect(cx - span, cy + y, span * 2, 1);
+      }
+    };
+    disc(16, 16, 12, breed.eye);
+    disc(16, 17, 7, '#2A1F33');
+    // One small specular dot, up and to the left, where the key light is in every room. It is
+    // the whole difference between an eye and a bead.
+    disc(12, 11, 2, '#FFFFFF');
+  });
+}
+
+function buildEyes(breed: BreedDef): { mesh: THREE.Mesh; texture: THREE.CanvasTexture } {
+  const texture = eyeTexture(breed);
+  const geos: THREE.BufferGeometry[] = [];
+  for (const sx of [-1, 1]) {
+    // Big, and set wide apart. Eye size relative to head is most of what makes a character read
+    // as appealing rather than as a model of an animal.
+    //
+    // phiStart is -90 degrees on purpose. A sphere's UVs wrap equirectangularly and u=0.25 lands
+    // on +z by default, so an iris drawn at the middle of the texture ends up on the SIDE of the
+    // eyeball, facing the cat's ear. Starting phi a quarter-turn back puts u=0.5 — the middle of
+    // the canvas, where the iris is — squarely on the front of the eye.
+    const g = new THREE.SphereGeometry(0.105, 14, 12, -Math.PI / 2, Math.PI * 2);
+    g.translate(sx * 0.125, 0, 0);
+    geos.push(g);
+  }
+  const merged = mergeGeometries(geos, false)!;
+  for (const g of geos) g.dispose();
+  // Toon-shaded, not unlit: an unlit eye is at full brightness in every room, so in the café at
+  // night the cats read as headlights. A faint emissive keeps them alive in the dark without
+  // making them lamps.
+  const mesh = new THREE.Mesh(
+    merged,
+    new THREE.MeshToonMaterial({
+      map: texture,
+      gradientMap: toonGradient(),
+      emissive: 0xffffff,
+      emissiveIntensity: 0.18,
+      emissiveMap: texture,
+    }),
+  );
+  mesh.name = 'eyes';
+  mesh.castShadow = false;
+  return { mesh, texture };
 }
 
 /** Patch boxes layered over the body, per breed style. */
@@ -170,12 +229,13 @@ function patchSpecs(breed: BreedDef): BoxSpec[] {
  */
 function buildEar(color: number): THREE.Group {
   const g = new THREE.Group();
-  const mesh = mergedBoxes(
+  const mesh = mergedRounded(
     [
       { w: 0.18, h: 0.12, d: 0.07, y: 0.06 },
       { w: 0.1, h: 0.1, d: 0.06, y: 0.17 },
     ],
     color,
+    0.03,
   );
   if (mesh) g.add(mesh);
   return g;
@@ -204,7 +264,7 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
     { w: 0.6, h: 0.36, d: 0.3, y: 0.3, z: 0.44 }, // chest
     { w: 0.64, h: 0.4, d: 0.28, y: 0.36, z: -0.42 }, // haunches
   ];
-  const body = mergedBoxes(bodySpecs, bodyColor)!;
+  const body = mergedRounded(bodySpecs, bodyColor, 0.16)!;
   body.name = 'body';
   root.add(body);
 
@@ -221,12 +281,13 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
   headPivot.position.set(0, 0.52, 0.5);
   root.add(headPivot);
 
-  const head = mergedBoxes(
+  const head = mergedRounded(
     [
       { w: 0.66, h: 0.56, d: 0.56, y: 0.2 }, // oversized skull
       { w: 0.3, h: 0.18, d: 0.14, y: 0.12, z: 0.31 }, // muzzle
     ],
     bodyColor,
+    0.2,
   )!;
   head.name = 'head';
   headPivot.add(head);
@@ -248,6 +309,11 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
   face.position.set(0, 0.22, 0.286);
   headPivot.add(face);
 
+  // Real eyes, standing proud of the face decal so the highlight catches at a grazing angle.
+  const { mesh: eyes } = buildEyes(breed);
+  eyes.position.set(0, 0.245, 0.30);
+  headPivot.add(eyes);
+
   /* ---- legs: hip joints at the top, box hanging below ---- */
   const legOffsets: Array<[number, number]> = [
     [-0.22, 0.3],
@@ -262,12 +328,13 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
     pivot.position.set(x, 0.24, z);
     // Shin and paw merge into one mesh unless the paw is a different colour (tuxedo socks).
     if (pawColor === bodyColor) {
-      const leg = mergedBoxes(
+      const leg = mergedRounded(
         [
           { w: 0.17, h: 0.26, d: 0.17, y: -0.13 },
           { w: 0.19, h: 0.08, d: 0.19, y: -0.26 },
         ],
         bodyColor,
+        0.075,
       );
       if (leg) pivot.add(leg);
     } else {
@@ -292,7 +359,7 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
     }
     const last = i === SEGMENTS - 1;
     const w = 0.145 - i * 0.016;
-    const segMesh = box({ w, h: w, d: 0.17, z: -0.08 }, last ? patchColor : tailColor);
+    const segMesh = roundedBox({ w, h: w, d: 0.17, z: -0.08 }, last ? patchColor : tailColor, 0.055);
     seg.add(segMesh);
     parent.add(seg);
     parent = seg;
@@ -349,6 +416,7 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
     legs,
     tail,
     extras,
+    eyes,
     faceTexture,
     breed,
     radius: 0.55 * scale,
@@ -382,8 +450,24 @@ export function applyOutfit(parts: CatParts, outfit: Outfit): void {
 }
 
 /** Swap the face decal. Cheap — redraws one 64×48 canvas, no new GPU allocation. */
+/**
+ * How wide the eyes are open, per emotion. The canvas draws the lid shape on top; this is the
+ * eyeball underneath, so a blink actually closes something rather than swapping a sticker.
+ */
+const EYE_OPENNESS: Record<CatEmotion, { x: number; y: number }> = {
+  neutral: { x: 1, y: 1 },
+  happy: { x: 1, y: 0.18 },
+  love: { x: 1, y: 0.18 },
+  sleep: { x: 1, y: 0.06 },
+  blink: { x: 1, y: 0.06 },
+  eat: { x: 1, y: 0.35 },
+  surprised: { x: 1.18, y: 1.18 },
+};
+
 export function setEmotion(parts: CatParts, emotion: CatEmotion): void {
   redrawCanvasTexture(parts.faceTexture, (ctx) => drawFace(ctx, parts.breed, emotion));
+  const open = EYE_OPENNESS[emotion] ?? EYE_OPENNESS.neutral;
+  parts.eyes.scale.set(open.x, open.y, 1);
 }
 
 /**
