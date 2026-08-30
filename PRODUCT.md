@@ -27,9 +27,33 @@ Lowercase-warm, never cute-cloying, never corporate. Short. Slightly hand-writte
   moves on.
 
 ## Non-negotiables
-1. No real money. No ads. No analytics. No account. No network call after first load.
+1. No real money. No ads. No analytics.
 2. Nothing in the world can be lost, starve, decay, or express disappointment.
 3. Missing a day is a weather event, not a verdict.
+4. **Single player never needs the network or an account.** Adopt, study, feed, decorate and
+   earn coins entirely offline, exactly as before. If the server is down, gone, or never
+   reached, the game is unaffected — only the party is.
+
+### Amended 2026-08-30: accounts and the network
+
+Rule 1 used to read "No real money. No ads. No analytics. No account. No network call after
+first load." The owner has deliberately reversed the account and network clauses in order to
+build **real** multiplayer: a host starts a party, gets a join code, and friends on their own
+devices join it live.
+
+This is recorded rather than quietly dropped, because the old rule was load-bearing — it is why
+party mode was first built as offline cat cards, and anyone reading that code needs to know it
+was a constraint that changed, not an oversight.
+
+What the reversal does and does not license:
+
+- **Does:** accounts, a hosted database, and live sync — but *only* in service of the party.
+- **Does not:** ads, analytics, telemetry, real-money purchases, or an account gate on anything
+  a solo player does. Those clauses stand.
+- **Data leaving the device is now real**, so it is a design surface with its own rules: the
+  smallest possible payload (a cat, its outfit, a display name), never the save file; deleting
+  an account deletes the rows; and the party UI must say plainly what is being shared, because
+  the old copy promised "nothing leaves this device" and that promise is being retired.
 
 ## Anti-references — what this must never look like
 These are the falsifiable half of the design contract. A render that resembles any of these
