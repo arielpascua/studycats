@@ -55,6 +55,22 @@ export interface BuiltRoom {
 /** How far past the eye's limit the far walls stand, so the room has floor beyond the furniture. */
 const WALL_MARGIN = 2.0;
 
+/**
+ * Wall slabs are this thick, and a wall at `wallZ` therefore has its INNER, VISIBLE face at
+ * `wallZ + WALL_THICK`.
+ *
+ * Everything hung on a wall must be placed against that face, not against `wallZ`. Getting this
+ * wrong is not subtle-looking: a board placed at `wallZ + 0.2` is buried *inside* the plaster,
+ * and one whose front lands exactly on `wallZ + 0.3` is coplanar with the wall and z-fights,
+ * which renders as a stippled dither crawling over the whole surface. Both shipped once.
+ */
+const WALL_THICK = 0.3;
+
+/** Mount a slab of thickness `d` on a wall face, standing `out` proud of it. */
+function mount(face: number, d: number, out = 0.02): number {
+  return face + out + d / 2;
+}
+
 /** The five tiers of the shared hearth: box size and height. */
 const TIERS: Array<{ s: number; y: number; flat?: number }> = [
   { s: 0.74, y: 1.02, flat: 0.42 },
@@ -90,15 +106,32 @@ function spines(
   }
 }
 
-/** A framed picture hung flat against a wall. */
-function picture(batch: BoxBatch, x: number, y: number, z: number, w: number, h: number, frame: string, art: string, facing: 'x' | 'z'): void {
+/**
+ * A framed picture hung on a wall face.
+ *
+ * `face` is the wall's inner plane; the frame sits against it and the canvas stands proud of the
+ * frame, so no two surfaces are ever coplanar.
+ */
+function picture(
+  batch: BoxBatch,
+  along: number,
+  y: number,
+  face: number,
+  w: number,
+  h: number,
+  frame: string,
+  art: string,
+  facing: 'x' | 'z',
+): void {
   const t = 0.12;
+  const frameAt = mount(face, t);
+  const artAt = mount(face, t * 0.6, t + 0.02);
   if (facing === 'z') {
-    batch.add({ w, h, d: t, x, y, z }, hex(frame));
-    batch.add({ w: w - 0.26, h: h - 0.26, d: t * 0.6, x, y, z: z + t * 0.5 }, hex(art));
+    batch.add({ w, h, d: t, x: along, y, z: frameAt }, hex(frame));
+    batch.add({ w: w - 0.26, h: h - 0.26, d: t * 0.6, x: along, y, z: artAt }, hex(art));
   } else {
-    batch.add({ w: t, h, d: w, x, y, z }, hex(frame));
-    batch.add({ w: t * 0.6, h: h - 0.26, d: w - 0.26, x: x + t * 0.5, y, z }, hex(art));
+    batch.add({ w: t, h, d: w, x: frameAt, y, z: along }, hex(frame));
+    batch.add({ w: t * 0.6, h: h - 0.26, d: w - 0.26, x: artAt, y, z: along }, hex(art));
   }
 }
 
@@ -112,6 +145,9 @@ interface FurnishContext {
   /** Far wall planes — the ones in shot. */
   wallX: number;
   wallZ: number;
+  /** The visible INNER faces of those walls. Hang things on these, never on wallX/wallZ. */
+  faceX: number;
+  faceZ: number;
   halfX: number;
   halfZ: number;
   obstacles: Obstacle[];
@@ -222,11 +258,11 @@ function furnishClassroom(c: FurnishContext): void {
 
   // The chalkboard fills the wall everyone is facing, with a tray and a ledge of erasers.
   const boardW = Math.min(10, Math.abs(c.wallX) * 2 + 4);
-  batch.add({ w: boardW + 0.4, h: 2.6, d: 0.12, x: 0, y: 2.3, z: c.wallZ + 0.2 }, hex(theme.woodDark));
-  batch.add({ w: boardW, h: 2.2, d: 0.06, x: 0, y: 2.3, z: c.wallZ + 0.27 }, hex('#2E4A3E'));
-  batch.add({ w: boardW + 0.4, h: 0.12, d: 0.3, x: 0, y: 1.1, z: c.wallZ + 0.34 }, hex(theme.wood));
+  batch.add({ w: boardW + 0.4, h: 2.6, d: 0.12, x: 0, y: 2.3, z: mount(c.faceZ, 0.12) }, hex(theme.woodDark));
+  batch.add({ w: boardW, h: 2.2, d: 0.06, x: 0, y: 2.3, z: mount(c.faceZ, 0.06, 0.14) }, hex('#2E4A3E'));
+  batch.add({ w: boardW + 0.4, h: 0.12, d: 0.3, x: 0, y: 1.1, z: mount(c.faceZ, 0.3, 0.02) }, hex(theme.wood));
   for (let i = 0; i < 5; i++) {
-    batch.add({ w: 0.24, h: 0.1, d: 0.16, x: -boardW / 2 + 0.6 + i * 0.7, y: 1.22, z: c.wallZ + 0.34 }, hex('#F6F1E2'));
+    batch.add({ w: 0.24, h: 0.1, d: 0.16, x: -boardW / 2 + 0.6 + i * 0.7, y: 1.22, z: mount(c.faceZ, 0.16, 0.12) }, hex('#F6F1E2'));
   }
 
   // Rows of EMPTY desks behind the party, toward the viewer.
@@ -268,9 +304,9 @@ function furnishClassroom(c: FurnishContext): void {
   c.obstacles.push({ x: tx, z: c.wallZ + 1.7, r: 1.1 });
 
   // A clock above the board — the detail that makes a room a classroom.
-  batch.add({ w: 0.62, h: 0.62, d: 0.12, x: 0, y: 4.1, z: c.wallZ + 0.24 }, hex('#F6F1E2'));
-  batch.add({ w: 0.06, h: 0.22, d: 0.14, x: 0, y: 4.19, z: c.wallZ + 0.3 }, hex(theme.woodDark));
-  batch.add({ w: 0.18, h: 0.06, d: 0.14, x: 0.06, y: 4.1, z: c.wallZ + 0.3 }, hex(theme.woodDark));
+  batch.add({ w: 0.62, h: 0.62, d: 0.12, x: 0, y: 4.1, z: mount(c.faceZ, 0.12) }, hex('#F6F1E2'));
+  batch.add({ w: 0.06, h: 0.22, d: 0.1, x: 0, y: 4.19, z: mount(c.faceZ, 0.1, 0.14) }, hex(theme.woodDark));
+  batch.add({ w: 0.18, h: 0.06, d: 0.1, x: 0.06, y: 4.1, z: mount(c.faceZ, 0.1, 0.14) }, hex(theme.woodDark));
 }
 
 function furnishConference(c: FurnishContext): void {
@@ -304,9 +340,11 @@ function furnishConference(c: FurnishContext): void {
 
   // The screen everyone pretends to read, and a whiteboard beside it.
   const screenW = Math.min(7.5, Math.abs(c.wallX) * 2 + 3);
-  batch.add({ w: screenW + 0.3, h: 3.0, d: 0.14, x: 0, y: 2.6, z: c.wallZ + 0.2 }, hex('#1A1E2E'));
-  batch.add({ w: screenW, h: 2.7, d: 0.06, x: 0, y: 2.6, z: c.wallZ + 0.28 }, hex('#2E4A7A'));
-  batch.add({ w: 3.2, h: 2.0, d: 0.1, x: c.wallX + 0.2, y: 2.3, z: -1.4 }, hex('#F6F6F2'));
+  batch.add({ w: screenW + 0.3, h: 3.0, d: 0.14, x: 0, y: 2.6, z: mount(c.faceZ, 0.14) }, hex('#1A1E2E'));
+  batch.add({ w: screenW, h: 2.7, d: 0.06, x: 0, y: 2.6, z: mount(c.faceZ, 0.06, 0.16) }, hex('#2E4A7A'));
+  // The whiteboard hangs on the -x wall, so it must be thin in X and wide in Z. It was authored
+  // the other way round and rendered as a sliver seen edge-on.
+  batch.add({ w: 0.1, h: 2.0, d: 3.2, x: mount(c.faceX, 0.1), y: 2.3, z: -1.4 }, hex('#F6F6F2'));
 
   // Spare chairs pushed back from the table and a plant in the corner. A meeting room with
   // exactly as many chairs as people reads as a diorama; a real one has extras.
@@ -371,7 +409,7 @@ function furnishMuseum(c: FurnishContext): void {
   const art = ['#7A4E52', '#4E6E7A', '#6E7A4E', '#7A6A4E'];
   for (let i = 0; i < 4; i++) {
     const x = -3.6 + i * 2.4;
-    picture(batch, x, 3.0, c.wallZ + 0.24, 1.7, 2.1, theme.woodDark, art[i % art.length], 'z');
+    picture(batch, x, 3.0, c.faceZ, 1.7, 2.1, theme.woodDark, art[i % art.length], 'z');
   }
 
   // More of the gallery: small plinths with their own pieces, receding toward the viewer. A
@@ -462,10 +500,10 @@ export function buildRoom(roomId: RoomId | string, memberCount: number): BuiltRo
     const y = yFrom + h / 2;
     batch.addMany(
       [
-        { w: width, h, d: 0.3, x: cx, y, z: wallZ + 0.15 },
-        { w: 0.3, h, d: depth, x: wallX + 0.15, y, z: cz },
-        { w: width, h, d: 0.3, x: cx, y, z: nearZ - 0.15 },
-        { w: 0.3, h, d: depth, x: nearX - 0.15, y, z: cz },
+        { w: width, h, d: WALL_THICK, x: cx, y, z: wallZ + WALL_THICK / 2 },
+        { w: WALL_THICK, h, d: depth, x: wallX + WALL_THICK / 2, y, z: cz },
+        { w: width, h, d: WALL_THICK, x: cx, y, z: nearZ - WALL_THICK / 2 },
+        { w: WALL_THICK, h, d: depth, x: nearX - WALL_THICK / 2, y, z: cz },
       ],
       hex(colour),
     );
@@ -489,7 +527,19 @@ export function buildRoom(roomId: RoomId | string, memberCount: number): BuiltRo
   /* ------------------------------------------------------------- furniture */
 
   const obstacles: Obstacle[] = [];
-  FURNISH[def.id]({ batch, group, theme, seats, wallX, wallZ, halfX: seats.halfX, halfZ: seats.halfZ, obstacles });
+  FURNISH[def.id]({
+    batch,
+    group,
+    theme,
+    seats,
+    wallX,
+    wallZ,
+    faceX: wallX + WALL_THICK,
+    faceZ: wallZ + WALL_THICK,
+    halfX: seats.halfX,
+    halfZ: seats.halfZ,
+    obstacles,
+  });
 
   // Cushions last, so they sit on top of whatever seating the room built.
   for (const seat of seats.seats) {

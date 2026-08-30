@@ -268,6 +268,13 @@ production constants rather than restating them. Findings worth keeping:
   three desks in an empty hall reads as a mistake; one with twenty reads as a classroom.
 - **People sit across a table, not zig-zagged down it.** Alternating sides at half-pitch cuts an
   eight-seat run from 8.05 to 5.60, which is what makes the whole thing framable.
+- **Wall furniture mounts on the wall's FACE, never on the wall's plane.** A wall at `wallZ` is a
+  0.3-thick slab, so its visible face is at `wallZ + WALL_THICK`. A chalkboard placed at
+  `wallZ + 0.2` is buried inside the plaster; one whose front lands exactly on `wallZ + 0.3` is
+  coplanar with the wall and z-fights, which renders as a stippled dither crawling over the whole
+  surface. Both shipped. `mount(face, depth, out)` is the only correct way to hang something.
+- **Check the axis of anything flat.** The conference whiteboard hangs on the -x wall and was
+  authored 3.2 wide in *x*, so it rendered as a sliver seen edge-on.
 - `shell.ceiling` is the eye's limit and `ROOM_LID` is where the slab is drawn. When a venue drew
   its lid at the eye's own height, the rig climbed above it during break framing and rendered the
   room from the roof — a black screen. A test now pins the gap.
