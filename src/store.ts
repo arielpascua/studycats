@@ -49,11 +49,24 @@ import { dayKey, season } from './core/time';
 import { claimCompleted, countersFrom, questViews, rolloverQuests, type QuestView } from './core/quests';
 import { evaluate as evaluateAchievements } from './core/achievements';
 import { BREEDS, isAdoptable, type BreedId } from './data/breeds';
+import { VENUES, type VenueId } from './data/venues';
 import { ENVIRONMENTS, type EnvironmentId } from './data/environments';
 import { FURNITURE, allowedIn, fitsSlot, type SlotId } from './data/furniture';
 import { SNACKS } from './data/snacks';
 import { VISITORS, VISITOR_CHANCE, pickVisitor } from './data/visitors';
 import { RADIO_STATIONS } from './audio/engine';
+import {
+  addMember,
+  bonfireProgress,
+  bonfireReward,
+  decodeCatCard,
+  encodeCatCard,
+  removeMember as removePartyMemberPure,
+  renameMember as renamePartyMemberPure,
+  type GuestCat,
+  type PartyState,
+} from './core/party';
+import { COSMETICS, type CosmeticSlot } from './data/cosmetics';
 import { bus } from './core/events';
 import { trickForBond, TRICK_NAMES } from './scene/cats/catAnimator';
 
@@ -102,6 +115,25 @@ export interface Game {
   buyRadio(id: string): boolean;
   setEnvironment(id: EnvironmentId): boolean;
 
+  /* multiplayer */
+  setMode(mode: 'solo' | 'party'): void;
+  /** Where the party meets. Buying is a separate step, so a locked venue never silently costs. */
+  setVenue(id: VenueId): boolean;
+  buyVenue(id: VenueId): boolean;
+  addPlayer(playerName: string, source: { catId?: string; guest?: GuestCat }): { ok: boolean; error?: string };
+  removePlayer(id: string): void;
+  renamePlayer(id: string, playerName: string): void;
+  /** Import a friend's cat card and seat them. */
+  bringGuest(playerName: string, code: string): { ok: boolean; error?: string };
+  /** Share one of your cats as a card. */
+  catCardFor(catId: string): string | null;
+  sendCheer(memberId: string): void;
+  party(): PartyState;
+
+  /* wardrobe */
+  buyCosmetic(id: string): boolean;
+  equipCosmetic(catId: string, slot: CosmeticSlot, cosmeticId: string | null): void;
+
   /* misc */
   setSetting<K extends keyof GameState['settings']>(key: K, value: GameState['settings'][K]): void;
   quests(): QuestView[];
@@ -117,6 +149,19 @@ export interface Game {
 }
 
 const MAX_CATS = 12;
+
+/**
+ * Which world is actually on screen.
+ *
+ * `settings.environment` is where you study ALONE; it keeps its value while you are in the
+ * clearing so that leaving the party puts you back where you were. The mode is what decides
+ * which of the two is live, and every place that swaps scenes has to ask this rather than
+ * reading `settings.environment` directly — that mismatch is why importing a party save first
+ * dropped you into the room with an invisible roster.
+ */
+export function activeEnvironment(state: GameState): EnvironmentId {
+  return state.settings.mode === 'party' ? 'arena' : state.settings.environment;
+}
 
 export function createGame(): Game {
   const today = dayKey();
@@ -215,6 +260,29 @@ export function createGame(): Game {
 
     bus.emit('economy:coins', { total: store.getState().economy.coins, delta: reward, reason: 'focus' });
     bus.emit('economy:streak', { current: streakResult.streak.current, frozen: streakResult.frozen });
+
+    // In party mode the session also feeds the shared bonfire. This is the mechanic that makes
+    // studying together different from studying near each other: one object, everyone's minutes.
+    if (before.settings.mode === 'party' && before.party.members.length > 0) {
+      const wasMaxed = bonfireProgress(before.party.sharedMinutes, before.party.members.length).maxed;
+      store.setState((s) => ({
+        party: { ...s.party, sharedMinutes: s.party.sharedMinutes + minutes },
+      }));
+      const after = store.getState().party;
+      const progress = bonfireProgress(after.sharedMinutes, after.members.length);
+      if (progress.maxed && !wasMaxed) {
+        const prize = bonfireReward(after.members.length);
+        grantCoins(prize, 'bonfire');
+        toast('THE FIRE IS ROARING', `everyone earned ${prize} 🐟 together`, '🔥', 'reward');
+      } else {
+        bus.emit('toast', {
+          title: 'INTO THE FIRE',
+          body: `+${minutes}m — stage ${progress.stage} of 5`,
+          icon: '🔥',
+          tone: 'gentle',
+        });
+      }
+    }
 
     if (streakResult.frozen) {
       toast('STREAK FROZEN', 'a snowflake covered the day you missed', '❄', 'gentle');
@@ -557,6 +625,135 @@ export function createGame(): Game {
 
     /* ---------------------------------------------------------------- misc */
 
+    /* ------------------------------------------------------- multiplayer */
+
+    buyVenue(id) {
+      const s = store.getState();
+      const def = VENUES[id];
+      if (!def || s.unlocks.venues.includes(id)) return false;
+      const economy = spend(s.economy, def.price);
+      if (!economy) return false;
+      store.setState((state) => ({
+        economy,
+        unlocks: { ...state.unlocks, venues: [...state.unlocks.venues, id] },
+      }));
+      toast('THE PARTY MOVES', def.label, def.icon, 'reward');
+      persist();
+      return true;
+    },
+
+    setVenue(id) {
+      const s = store.getState();
+      if (!s.unlocks.venues.includes(id)) return false;
+      if (s.settings.venue === id) return true;
+      store.setState((state) => ({ settings: { ...state.settings, venue: id } }));
+      // Party mode is standing in the arena right now, so the venue swap is a scene rebuild.
+      // In solo mode this only takes effect the next time you open the party.
+      bus.emit('env:changed', { environment: s.settings.mode === 'party' ? 'arena' : s.settings.environment });
+      persist();
+      return true;
+    },
+
+    setMode(nextMode) {
+      const s = store.getState();
+      if (s.settings.mode === nextMode) return;
+      store.setState((state) => ({ settings: { ...state.settings, mode: nextMode } }));
+      // The arena is not one of the solo worlds, so the scene swap is driven by mode rather
+      // than by `settings.environment`, which keeps its place for when you come back.
+      bus.emit('env:changed', { environment: nextMode === 'party' ? 'arena' : s.settings.environment });
+      persist();
+    },
+
+    addPlayer(playerName, source) {
+      const s = store.getState();
+      const result = addMember(s.party, {
+        playerName,
+        catId: source.catId ?? null,
+        guest: source.guest ?? null,
+      });
+      if (!result.ok) return { ok: false, error: result.reason };
+      store.setState({ party: result.party });
+      const seated = result.party.members[result.party.members.length - 1];
+      toast('PULLED UP A CUSHION', `${seated.playerName} joined the circle`, '🔥', 'reward');
+      persist();
+      return { ok: true };
+    },
+
+    removePlayer(id) {
+      const s = store.getState();
+      const leaving = s.party.members.find((m) => m.id === id);
+      store.setState({ party: removePartyMemberPure(s.party, id) });
+      if (leaving) toast('HEADED HOME', `${leaving.playerName} left the circle`, '👋', 'gentle');
+      persist();
+    },
+
+    renamePlayer(id, playerName) {
+      store.setState((s) => ({ party: renamePartyMemberPure(s.party, id, playerName) }));
+      persist();
+    },
+
+    bringGuest(playerName, code) {
+      const card = decodeCatCard(code);
+      if (!card.ok) return { ok: false, error: card.error };
+      return game.addPlayer(playerName, { guest: card.cat });
+    },
+
+    catCardFor(catId) {
+      const cat = store.getState().cats.find((c) => c.id === catId);
+      if (!cat) return null;
+      return encodeCatCard({
+        name: cat.name,
+        breed: cat.breed,
+        outfit: cat.outfit,
+        bond: bondLevel(cat.bondXp),
+      });
+    },
+
+    sendCheer(memberId) {
+      const s = store.getState();
+      if (!s.party.members.some((m) => m.id === memberId)) return;
+      store.setState((state) => ({ party: { ...state.party, cheers: state.party.cheers + 1 } }));
+      persist();
+    },
+
+    party: () => store.getState().party,
+
+    /* ---------------------------------------------------------- wardrobe */
+
+    buyCosmetic(id) {
+      const s = store.getState();
+      const def = COSMETICS[id];
+      if (!def || s.unlocks.cosmetics.includes(id)) return false;
+      const economy = spend(s.economy, def.price);
+      if (!economy) return false;
+      store.setState((state) => ({
+        economy,
+        unlocks: { ...state.unlocks, cosmetics: [...state.unlocks.cosmetics, id] },
+      }));
+      toast('NEW IN THE WARDROBE', def.name, '🎀', 'reward');
+      persist();
+      return true;
+    },
+
+    equipCosmetic(catId, slot, cosmeticId) {
+      const s = store.getState();
+      // Only something you own, and only in the slot it belongs to.
+      if (cosmeticId !== null) {
+        const def = COSMETICS[cosmeticId];
+        if (!def || def.slot !== slot || !s.unlocks.cosmetics.includes(cosmeticId)) return;
+      }
+      store.setState((state) => ({
+        cats: state.cats.map((c) => {
+          if (c.id !== catId) return c;
+          const outfit = { ...c.outfit };
+          if (cosmeticId === null) delete outfit[slot];
+          else outfit[slot] = cosmeticId;
+          return { ...c, outfit };
+        }),
+      }));
+      persist();
+    },
+
     setSetting(key, value) {
       store.setState((s) => ({ settings: { ...s.settings, [key]: value } }));
       bus.emit('settings:changed');
@@ -637,7 +834,7 @@ export function createGame(): Game {
       runtime.timer = restoreTimer(result.state.timer, result.state.settings.timer, Date.now());
       runtime.petsThisSession = {};
       saveGame(store.getState());
-      bus.emit('env:changed', { environment: result.state.settings.environment });
+      bus.emit('env:changed', { environment: activeEnvironment(result.state) });
       bus.emit('settings:changed');
       toast('SAVE LOADED', 'your cats are back', '💾', 'reward');
       return { ok: true };
@@ -651,7 +848,7 @@ export function createGame(): Game {
       runtime.petsThisSession = {};
       runtime.konamiUnlocked = false;
       saveGame(fresh);
-      bus.emit('env:changed', { environment: fresh.settings.environment });
+      bus.emit('env:changed', { environment: activeEnvironment(fresh) });
       bus.emit('settings:changed');
     },
   };

@@ -25,12 +25,19 @@ export interface Obstacle {
 
 export interface BrainContext {
   mode: BrainMode;
-  bounds: { w: number; d: number };
+  /**
+   * The walkable area. `radius` makes it a CIRCLE rather than the w x d rectangle — the arena
+   * is an island, and a rectangular clamp let cats stroll out over the water at the corners.
+   */
+  bounds: { w: number; d: number; radius?: number };
   obstacles: readonly Obstacle[];
   /** Present during a break; the brain asks for a target through the intents. */
   feedingActive: boolean;
   rng: Rng;
   reducedMotion: boolean;
+  /** Multiplies how often a cat chooses to walk. The arena turns this up; a fireside circle
+   *  should mill about rather than doze the way they do beside your desk. */
+  wanderlust?: number;
 }
 
 export interface BrainIntent {
@@ -90,6 +97,14 @@ export class CatBrain {
   private lastMode: BrainMode = 'idle';
   /** Set by the world when the user is dragging this cat. */
   held = false;
+  /**
+   * A spot this cat gravitates back to — its cushion in the arena. Not a leash: it only biases
+   * where the next wander point is chosen, so the cat roams and then drifts home rather than
+   * being pinned in place.
+   */
+  home: { x: number; z: number } | null = null;
+  /** How strongly `home` pulls, 0..1. */
+  homePull = 0.45;
   /** Set by the world while a trick plays. */
   private frozenUntil = 0;
   private clock = 0;
@@ -129,6 +144,17 @@ export class CatBrain {
     this.target = null;
     this.targetKind = 'none';
     this.frozenUntil = this.clock + seconds;
+  }
+
+  /**
+   * Turn to look at a point. Used when the cat is touched: whoever poked it should be
+   * acknowledged. The next walk overwrites this, which is correct — it is a glance, not a lock.
+   */
+  faceToward(x: number, z: number): void {
+    const dx = x - this.x;
+    const dz = z - this.z;
+    if (Math.hypot(dx, dz) < 0.0001) return;
+    this.facing = Math.atan2(dx, dz);
   }
 
   /** Teleport (drag & drop). Clears any stale plan so the cat re-decides where it is now. */
@@ -285,8 +311,9 @@ export class CatBrain {
       return;
     }
 
+    const wanderlust = ctx.wanderlust ?? 1;
     const pose = pickWeighted(ctx.rng, [
-      { value: 'walk' as CatPose, weight: 0.3 * (0.5 + temp.energy) },
+      { value: 'walk' as CatPose, weight: 0.3 * (0.5 + temp.energy) * wanderlust },
       { value: 'sit' as CatPose, weight: 0.26 },
       { value: 'sleep' as CatPose, weight: 0.24 * (0.5 + temp.sleepy) },
       { value: 'play' as CatPose, weight: 0.14 * (0.4 + temp.energy) },
@@ -299,7 +326,17 @@ export class CatBrain {
   private enter(pose: CatPose, ctx: BrainContext): void {
     this.pose = pose;
     if (pose === 'walk') {
-      this.target = this.pickWanderPoint(ctx);
+      const point = this.pickWanderPoint(ctx);
+      // pickWanderPoint can fall back to `home`, which may be where we already are. Re-deciding
+      // shortly is better than standing in place holding a walk pose.
+      if (Math.hypot(point.x - this.x, point.z - this.z) < ARRIVE_RADIUS * 1.5) {
+        this.pose = 'sit';
+        this.target = null;
+        this.targetKind = 'none';
+        this.timer = 1.5 + ctx.rng() * 2;
+        return;
+      }
+      this.target = point;
       this.targetKind = 'wander';
     } else {
       this.target = null;
@@ -309,16 +346,41 @@ export class CatBrain {
   }
 
   private pickWanderPoint(ctx: BrainContext): { x: number; z: number } {
+    const radius = ctx.bounds.radius;
     const halfW = Math.max(0.5, ctx.bounds.w / 2 - 1);
     const halfD = Math.max(0.5, ctx.bounds.d / 2 - 1);
-    // Ten tries to find a spot outside every obstacle; fall back to the centre, which is
-    // always walkable because props never occupy it.
+
+    // Ten tries to find a spot outside every obstacle.
     for (let i = 0; i < 10; i++) {
-      const x = ctx.rng.range(-halfW, halfW);
-      const z = ctx.rng.range(-halfD, halfD);
+      let x: number;
+      let z: number;
+
+      if (this.home && ctx.rng() < this.homePull) {
+        // Drift back toward the cushion — a loose orbit around it, not a return to the exact
+        // spot, so the ring still reads as "these are their places" without looking staged.
+        const angle = ctx.rng.range(0, Math.PI * 2);
+        // Comfortably beyond ARRIVE_RADIUS: a target closer than that counts as already
+        // reached, so the cat "arrives" without taking a step and stands still forever.
+        const near = ctx.rng.range(1.0, 2.6);
+        x = this.home.x + Math.sin(angle) * near;
+        z = this.home.z + Math.cos(angle) * near;
+      } else if (radius) {
+        // Uniform over a disc: sqrt keeps them from bunching in the middle.
+        const angle = ctx.rng.range(0, Math.PI * 2);
+        const r = Math.sqrt(ctx.rng()) * radius;
+        x = Math.sin(angle) * r;
+        z = Math.cos(angle) * r;
+      } else {
+        x = ctx.rng.range(-halfW, halfW);
+        z = ctx.rng.range(-halfD, halfD);
+      }
+
+      if (radius && Math.hypot(x, z) > radius) continue;
+      // A destination inside the arrival radius is not a destination.
+      if (Math.hypot(x - this.x, z - this.z) < ARRIVE_RADIUS * 2) continue;
       if (!this.blocked(x, z, ctx.obstacles)) return { x, z };
     }
-    return { x: 0, z: 0 };
+    return this.home ?? { x: 0, z: 0 };
   }
 
   private blocked(x: number, z: number, obstacles: readonly Obstacle[]): boolean {
@@ -369,10 +431,23 @@ export class CatBrain {
     const nx = this.x + dx * step;
     const nz = this.z + dz * step;
 
-    const halfW = ctx.bounds.w / 2 - 0.4;
-    const halfD = ctx.bounds.d / 2 - 0.4;
-    this.x = Math.min(halfW, Math.max(-halfW, nx));
-    this.z = Math.min(halfD, Math.max(-halfD, nz));
+    if (ctx.bounds.radius) {
+      // Circular island: clamp onto the disc, or a cat walks off the edge onto open water.
+      const limit = ctx.bounds.radius;
+      const dist = Math.hypot(nx, nz);
+      if (dist > limit && dist > 0.0001) {
+        this.x = (nx / dist) * limit;
+        this.z = (nz / dist) * limit;
+      } else {
+        this.x = nx;
+        this.z = nz;
+      }
+    } else {
+      const halfW = ctx.bounds.w / 2 - 0.4;
+      const halfD = ctx.bounds.d / 2 - 0.4;
+      this.x = Math.min(halfW, Math.max(-halfW, nx));
+      this.z = Math.min(halfD, Math.max(-halfD, nz));
+    }
 
     this.pose = 'walk';
     this.speed = 1;

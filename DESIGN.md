@@ -224,3 +224,44 @@ loading · error · empty**. Specifically:
   has to be able to read — so it clears 4.5:1 rather than being a decorative gray. No text on
   `--lav-deep` below 18px.
 - Keyboard shortcuts are suppressed while an `<input>`/`<textarea>` has focus.
+
+
+## 9. Party mode and the five venues
+
+Party mode is local and account-free (`PRODUCT.md`: no network call after first load). A friend's
+cat arrives as a **cat card** — a base64url blob with an FNV checksum, pasted in by hand — so the
+roster is real without a server being real. Each member is one player and one cat, labelled
+`Mochi (Alice)`.
+
+### One builder, five places
+
+`src/scene/environments/arena.ts` is a single builder; `src/data/venues.ts` supplies values.
+The clearing, the library, the café, the rooftop and the museum are the same skeleton:
+
+| | floor disc | seats + posts | hearth | surround |
+|---|---|---|---|---|
+| Moonlit clearing | stone island on water | cushions, lanterns | campfire, 5 flame tiers | treeline, open sky |
+| Night library | wood, rug rings | cushions, green lamps | reading lamp, stacked shades | shelves of books |
+| Late café | warm wood | cushions, warm sconces | espresso bar, rising steam | lit window panes |
+| Rooftop class | rooftop tile | cushions, lanterns | rooftop lantern | city skyline, open sky |
+| Quiet museum | marble | benches, uplights | exhibit crystal | colonnade + gallery wall |
+
+This is deliberate. Five hand-built scenes would be five chances to get the party scaling wrong;
+one builder means **every** venue widens with the roster, because there is only one place where
+the widening is written.
+
+### Rules the venues have to obey (and the tests that pin them)
+
+- **`shell.ceiling` is the eye's limit, and an interior has a real lid.** Left at the open-sky
+  value, the camera rig climbed *above* the ceiling while framing a break and rendered the room
+  from the roof — a black screen. `arenaDefFor` derives the shell ceiling from the venue's lid.
+- **A gapped surround needs a backdrop.** A colonnade you can see between leaked 29% of the
+  frame's top edge to bare background. One merged wall ring behind it, one draw call.
+- **Bands bucket by colour across every row before merging.** A wall of books is 150 boxes in
+  7 colours: bucketed, that is 7 draw calls; merged per row it was 42, which put the arena
+  exactly on its 300-call ceiling.
+- **Posts take keepouts.** The laptop stand sits behind the ring, and for even party sizes a
+  post gap lands in exactly that spot — the two were drawn inside each other. The stand passes
+  its own circle in rather than the arena hardcoding where the furniture is.
+- **The point light never casts.** A `PointLight` shadow is a cube map: six extra scene renders.
+  The key light casts; the hearth only lights. In the picture you cannot tell.

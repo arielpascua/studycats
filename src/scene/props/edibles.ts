@@ -72,6 +72,30 @@ function shapeSpecs(def: SnackDef): { a: BoxSpec[]; b: BoxSpec[] } {
         a: [{ w: 0.12, h: 0.12, d: 0.34, y: 0.07 }],
         b: [{ w: 0.13, h: 0.05, d: 0.14, y: 0.14, z: -0.09 }],
       };
+    case 'drumstick':
+      // Crispy meat on top, knuckle of bone underneath — the silhouette does the work, so the
+      // bone is a separate colour rather than a shape detail nobody would read at this size.
+      return {
+        a: [{ w: 0.22, h: 0.2, d: 0.22, y: 0.16 }, { w: 0.16, h: 0.13, d: 0.16, y: 0.29 }],
+        b: [{ w: 0.07, h: 0.14, d: 0.07, y: 0.06 }, { w: 0.12, h: 0.06, d: 0.12, y: 0.02 }],
+      };
+    case 'skewer':
+      return {
+        a: [
+          { w: 0.15, h: 0.13, d: 0.15, y: 0.11, ry: 0.2 },
+          { w: 0.15, h: 0.13, d: 0.15, y: 0.25, ry: -0.3 },
+          { w: 0.15, h: 0.13, d: 0.15, y: 0.39, ry: 0.15 },
+        ],
+        b: [{ w: 0.04, h: 0.52, d: 0.04, y: 0.24 }],
+      };
+    case 'chop':
+      return {
+        a: [{ w: 0.3, h: 0.1, d: 0.22, y: 0.06 }],
+        b: [
+          { w: 0.32, h: 0.05, d: 0.06, y: 0.07, z: 0.12 },
+          { w: 0.08, h: 0.07, d: 0.1, x: -0.18, y: 0.06 },
+        ],
+      };
     case 'disc':
     default:
       return {

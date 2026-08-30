@@ -9,7 +9,19 @@ export interface SnackDef {
   /** Emoji used in the cat-alogue / toasts only — the 3D model is built from `shape`. */
   icon: string;
   /** How catFactory-adjacent prop code assembles it. */
-  shape: 'rice' | 'round' | 'puff' | 'fish' | 'crescent' | 'berry' | 'cup' | 'disc' | 'stick';
+  shape:
+    | 'rice'
+    | 'round'
+    | 'puff'
+    | 'fish'
+    | 'crescent'
+    | 'berry'
+    | 'cup'
+    | 'disc'
+    | 'stick'
+    | 'drumstick'
+    | 'skewer'
+    | 'chop';
   colorA: string;
   colorB: string;
   /** Coin price to add it to the rotation. Starter snacks cost nothing. */
@@ -31,6 +43,13 @@ export const SNACKS: Record<string, SnackDef> = {
   cocoa: { id: 'cocoa', name: 'Cocoa', icon: '☕', shape: 'cup', colorA: '#FBF2F4', colorB: '#7A5138', price: 75, scale: 1.17 },
   lemonade: { id: 'lemonade', name: 'Lemonade', icon: '🥤', shape: 'cup', colorA: '#FBF2F4', colorB: '#F5E1A4', price: 65, scale: 1.17 },
   sweetpotato: { id: 'sweetpotato', name: 'Sweet potato', icon: '🍠', shape: 'stick', colorA: '#C98BA6', colorB: '#F6C99F', price: 90, scale: 1.3 },
+
+  // Meat. The cats have opinions about this aisle, and the prices say so: a drumstick is the
+  // most expensive thing on the menu because watching a cat carry one is the whole joke.
+  meatball: { id: 'meatball', name: 'Meatball', icon: '🧆', shape: 'round', colorA: '#8A5236', colorB: '#B4703F', price: 50, scale: 1.1 },
+  yakitori: { id: 'yakitori', name: 'Yakitori', icon: '🍢', shape: 'skewer', colorA: '#A9663C', colorB: '#E9C089', price: 80, scale: 1.23 },
+  friedchicken: { id: 'friedchicken', name: 'Fried chicken', icon: '🍗', shape: 'drumstick', colorA: '#D89A4C', colorB: '#FBF6EE', price: 95, scale: 1.23 },
+  steak: { id: 'steak', name: 'Steak', icon: '🥩', shape: 'chop', colorA: '#9C4A44', colorB: '#F1E4CE', price: 120, scale: 1.3 },
 };
 
 export const SNACK_ORDER: readonly string[] = Object.keys(SNACKS);

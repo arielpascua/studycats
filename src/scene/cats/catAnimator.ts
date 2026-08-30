@@ -226,6 +226,34 @@ export class CatAnimator {
       seg.rotation.x = i === 0 ? L.tailLift : L.tailLift * 0.25 + (this.reduced ? 0 : Math.sin(t * 1.1 - shift) * 0.06);
     }
 
+    // Worn items: charms float and turn, cloth trails the body. Everything else is welded to
+    // its joint and needs no per-frame work.
+    for (const item of p.worn.values()) {
+      if (!item.animated) continue;
+      if (this.reduced) {
+        item.group.position.y = 1.02;
+        item.group.rotation.set(0, 0, 0);
+        continue;
+      }
+      item.group.rotation.y = t * 0.7;
+      item.group.position.y = 1.02 + Math.sin(t * 1.9) * 0.05;
+      for (const child of item.group.children) {
+        if (child.name.startsWith('spark')) {
+          const i = Number(child.name.slice(5)) || 0;
+          child.position.y = Math.sin(t * 2.6 + i * 1.6) * 0.09;
+        }
+      }
+    }
+
+    const cape = p.root.getObjectByName('capeCloth');
+    if (cape) {
+      cape.rotation.x = this.reduced ? 0 : -0.12 - L.legs[0] * 0.18 - Math.sin(t * 2.2) * 0.05;
+    }
+    const scarfTail = p.root.getObjectByName('scarfTail');
+    if (scarfTail) {
+      scarfTail.rotation.z = this.reduced ? 0 : Math.sin(t * 2.4) * 0.28;
+    }
+
     // The patches mesh rides the body, if this breed has one.
     const patches = p.root.getObjectByName('patches');
     if (patches) {

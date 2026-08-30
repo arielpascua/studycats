@@ -1,7 +1,10 @@
 import { PALETTE } from './palette';
 import type { DayPhase } from '../core/time';
 
-export type EnvironmentId = 'room' | 'picnic' | 'bonfire' | 'cafe';
+export type EnvironmentId = 'room' | 'picnic' | 'bonfire' | 'cafe' | 'arena';
+
+/** The worlds you can study in alone. The arena is multiplayer-only and never appears here. */
+export type SoloEnvironmentId = Exclude<EnvironmentId, 'arena'>;
 
 /**
  * The *shell*: the volume the viewer is standing inside.
@@ -143,7 +146,7 @@ export const ENVIRONMENTS: Record<EnvironmentId, EnvironmentDef> = {
       night: { color: '#564A80', intensity: 0.62 },
     },
     ambience: 'birds',
-    snacks: ['sandwich', 'strawberry', 'melonpan', 'onigiri', 'lemonade'],
+    snacks: ['sandwich', 'strawberry', 'melonpan', 'onigiri', 'lemonade', 'friedchicken', 'meatball'],
     floor: { w: 12, d: 9 },
     // Outdoors: no walls, but the ground has to reach past the frustum in every direction or
     // you can see the edge of the world at the bottom of the frame.
@@ -181,7 +184,7 @@ export const ENVIRONMENTS: Record<EnvironmentId, EnvironmentDef> = {
       night: { color: '#463C6B', intensity: 0.52 },
     },
     ambience: 'fire',
-    snacks: ['marshmallow', 'sardine', 'sandwich', 'cocoa', 'sweetpotato'],
+    snacks: ['marshmallow', 'sardine', 'sandwich', 'cocoa', 'sweetpotato', 'yakitori', 'steak'],
     floor: { w: 11, d: 9 },
     shell: { kind: 'open', minX: -22, maxX: 22, minZ: -22, maxZ: 22, ceiling: OPEN_SKY, rimHeight: 3.0, groundHalf: 46 },
   },
@@ -217,13 +220,61 @@ export const ENVIRONMENTS: Record<EnvironmentId, EnvironmentDef> = {
       night: { color: '#544A78', intensity: 0.62 },
     },
     ambience: 'cafe',
-    snacks: ['croissant', 'milkbread', 'cocoa', 'strawberry', 'macaron'],
+    snacks: ['croissant', 'milkbread', 'cocoa', 'strawberry', 'macaron', 'meatball'],
     floor: { w: 12, d: 8 },
     shell: { kind: 'walls', minX: -6.0, maxX: NEAR_X, minZ: -4.0, maxZ: NEAR_Z, ceiling: WALL_H, rimHeight: 0, groundHalf: 0 },
   },
+
+  /**
+   * The multiplayer arena. Listed here so it gets the same lighting, shell and camera machinery
+   * as everywhere else, but kept out of ENVIRONMENT_ORDER: it is not somewhere you can choose to
+   * sit alone, it is where the party happens. Its geometry is built from the party size rather
+   * than from these numbers — see scene/environments/arena.ts.
+   */
+  arena: {
+    id: 'arena',
+    label: 'MOONLIT CLEARING',
+    blurb: 'an island, a fire, and everyone who showed up',
+    icon: '🔥',
+    price: 0,
+    sky: {
+      dawn: '#1D1740',
+      morning: '#1D1740',
+      afternoon: '#1D1740',
+      golden: '#1D1740',
+      dusk: '#1D1740',
+      night: '#1D1740',
+    },
+    key: {
+      dawn: { color: '#9AA6E8', intensity: 0.75 },
+      morning: { color: '#9AA6E8', intensity: 0.75 },
+      afternoon: { color: '#9AA6E8', intensity: 0.75 },
+      golden: { color: '#9AA6E8', intensity: 0.75 },
+      dusk: { color: '#9AA6E8', intensity: 0.75 },
+      night: { color: '#9AA6E8', intensity: 0.75 },
+    },
+    ambient: {
+      dawn: { color: '#4E4788', intensity: 0.66 },
+      morning: { color: '#4E4788', intensity: 0.66 },
+      afternoon: { color: '#4E4788', intensity: 0.66 },
+      golden: { color: '#4E4788', intensity: 0.66 },
+      dusk: { color: '#4E4788', intensity: 0.66 },
+      night: { color: '#4E4788', intensity: 0.66 },
+    },
+    ambience: 'fire',
+    snacks: ['marshmallow', 'sardine', 'onigiri', 'cocoa', 'sweetpotato'],
+    // The play area is generous: cats mill around the ring rather than staying on a rug.
+    floor: { w: 16, d: 16 },
+    shell: { kind: 'open', minX: -34, maxX: 34, minZ: -34, maxZ: 34, ceiling: OPEN_SKY, rimHeight: 3.4, groundHalf: 60 },
+  },
 };
 
-export const ENVIRONMENT_ORDER: readonly EnvironmentId[] = ['room', 'picnic', 'bonfire', 'cafe'];
+/** The four worlds the solo scene switcher offers. The arena is reached through party mode. */
+export const ENVIRONMENT_ORDER: readonly SoloEnvironmentId[] = ['room', 'picnic', 'bonfire', 'cafe'];
+
+export function isSoloEnvironmentId(value: unknown): value is SoloEnvironmentId {
+  return typeof value === 'string' && (ENVIRONMENT_ORDER as readonly string[]).includes(value);
+}
 
 export function isEnvironmentId(value: unknown): value is EnvironmentId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(ENVIRONMENTS, value);

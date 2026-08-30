@@ -27,20 +27,22 @@ import {
   type FeedingState,
 } from '../core/feeding';
 import type { Game } from '../store';
-import { bondTint, resolveReducedMotion } from '../store';
+import { activeEnvironment, bondTint, resolveReducedMotion } from '../store';
 import type { EnvironmentId } from '../data/environments';
-import { BREEDS } from '../data/breeds';
+import { BREEDS, type BreedId } from '../data/breeds';
 import { VISITORS } from '../data/visitors';
 import { hex, mixHex, PALETTE } from '../data/palette';
 import { buildEnvironment, type BuiltEnvironment } from './environments';
 import { createFurniture, type PlacedFurniture } from './props/furnitureProps';
 import { createBowl, createSnackMesh, type BowlMesh, type SnackMesh } from './props/edibles';
-import { createCat, createNameTag, type CatParts } from './cats/catFactory';
+import { applyOutfit, createCat, createNameTag, type CatParts } from './cats/catFactory';
+import { arenaRadius, bonfireProgress, partyLabel, seats as ringSeats, type PartyState } from '../core/party';
+import type { Outfit } from '../data/cosmetics';
 import { CatAnimator, trickForBond, TRICK_NAMES } from './cats/catAnimator';
 import { CatBrain, type BrainMode, type Obstacle } from './cats/catBrain';
 import { ParticleField, RECIPES } from './fx/particles';
 import { PickingController, type DropSurface, type PickTarget } from './picking';
-import type { ShellBox } from './camera';
+import type { FocusVolume, ShellBox } from './camera';
 import { boxGeo, disposeTree, flat, mergedBoxes, damp } from './voxel';
 import { audio } from '../audio/engine';
 import type { SlotId } from '../data/furniture';
@@ -62,6 +64,11 @@ interface CatAgent {
   /** Seconds left of the "just petted" pose. */
   petLeft: number;
   purring: boolean;
+  /** In party mode, the seat this cat belongs to. Null in solo. */
+  seat: { x: number; z: number; facing: number } | null;
+  /** Identity currently rendered, so the tag is only rebuilt when it actually changes. */
+  label: string;
+  tint: string;
 }
 
 export interface World {
@@ -73,6 +80,15 @@ export interface World {
   getShell(): ShellBox;
   /** Tell the world where the eye is, so cats keep out of it. Call after the rig updates. */
   setCameraPosition(position: THREE.Vector3): void;
+  /**
+   * What the camera must frame. Solo returns null (the rig uses its own desk-sized constant);
+   * the arena returns a volume sized to the ring, which is how the view widens as players join.
+   */
+  getFocus(): FocusVolume | null;
+  /** Send a cheer from a cat to the fire. Party mode's small social act. */
+  cheer(catKey: string): boolean;
+  /** Every cat's live position, heading and pose — for verifying behaviour, not for gameplay. */
+  catStates(): Array<{ id: string; label: string; x: number; z: number; facing: number; pose: string }>;
   setReducedMotion(reduced: boolean): void;
   setTimerDisplay(mode: 'idle' | 'focus' | 'break', clock: string, task: string): void;
   beginBreak(): void;
@@ -129,7 +145,13 @@ export function createWorld(game: Game): World {
 
   /* ------------------------------------------------------------ environment */
 
-  let env: BuiltEnvironment = buildEnvironment(game.getState().settings.environment);
+  // Boot into whichever world the mode says is live, sized for the party if that is the arena.
+  const bootState = game.getState();
+  let env: BuiltEnvironment = buildEnvironment(activeEnvironment(bootState), {
+    memberCount: bootState.party.members.length,
+    radius: arenaRadius(bootState.party.members.length),
+    venue: bootState.settings.venue,
+  });
   scene.add(env.group);
 
   const furnitureGroup = new THREE.Group();
@@ -213,9 +235,73 @@ export function createWorld(game: Game): World {
 
   /* ------------------------------------------------------------------ cats */
 
-  function syncCats(): void {
+  interface RosterEntry {
+    key: string;
+    breed: BreedId;
+    label: string;
+    tint: string;
+    outfit: Outfit;
+    seat: { x: number; z: number; facing: number } | null;
+  }
+
+  /**
+   * Who should be in the scene right now, in either mode.
+   *
+   * Solo: every cat you own, wandering, labelled with its own name.
+   * Party: one cat per member, seated on the ring, labelled "Mochi (Alice)" — and a member may
+   * be a *guest* whose cat lives on someone else's device and exists here only as a card.
+   */
+  function roster(): RosterEntry[] {
     const state = game.getState();
-    const wanted = new Set(state.cats.map((c) => c.id));
+
+    if (state.settings.mode !== 'party') {
+      return state.cats.map((cat) => ({
+        key: cat.id,
+        breed: cat.breed,
+        label: cat.name,
+        tint: bondTint(cat.bondXp),
+        outfit: cat.outfit,
+        seat: null,
+      }));
+    }
+
+    const members = state.party.members;
+    const ring = ringSeats(members.length, arenaRadius(members.length));
+    return members.map((member, i) => {
+      const local = member.catId ? state.cats.find((c) => c.id === member.catId) : undefined;
+      const cat = local ?? member.guest;
+      const breed: BreedId = (cat?.breed as BreedId) ?? 'strawberry';
+      const catName = cat?.name ?? BREEDS[breed].name;
+      const bondXp = local ? local.bondXp : 0;
+      // A guest's bond arrived as a level, not XP, so tint from the level directly.
+      const tint = local ? bondTint(bondXp) : guestTint(member.guest?.bond ?? 1);
+      return {
+        key: member.id,
+        breed,
+        label: partyLabel(catName, member.playerName),
+        tint,
+        outfit: (cat?.outfit ?? {}) as Outfit,
+        seat: ring[i] ?? null,
+      };
+    });
+  }
+
+  function retag(agent: CatAgent, label: string, tint: string): void {
+    agent.parts.root.remove(agent.tag);
+    agent.tag.material.map?.dispose();
+    agent.tag.material.dispose();
+    const tag = createNameTag(label, tint);
+    // In the arena the labels are the point — everyone is showing off, so they stay up.
+    tag.visible = agent.seat !== null;
+    agent.parts.root.add(tag);
+    agent.tag = tag;
+    agent.label = label;
+    agent.tint = tint;
+  }
+
+  function syncCats(): void {
+    const entries = roster();
+    const wanted = new Set(entries.map((e) => e.key));
 
     for (const [id, agent] of agents) {
       if (wanted.has(id)) continue;
@@ -226,40 +312,69 @@ export function createWorld(game: Game): World {
       agents.delete(id);
     }
 
-    for (const cat of state.cats) {
-      let agent = agents.get(cat.id);
-      if (!agent) {
-        const parts = createCat(cat.breed, { scale: 0.98 + rng() * 0.14 });
-        const brain = new CatBrain(
-          cat.id,
-          BREEDS[cat.breed],
-          spawnPoint(agents.size),
-          rng.range(-Math.PI, Math.PI),
-        );
-        const animator = new CatAnimator(parts, { phase: rng() * 6.28, reducedMotion: reduced });
-        const tag = createNameTag(cat.name, bondTint(cat.bondXp));
-        tag.visible = false;
-        parts.root.add(tag);
-        catGroup.add(parts.root);
-        agent = { id: cat.id, parts, animator, brain, tag, held: null, petLeft: 0, purring: false };
-        agents.set(cat.id, agent);
-      }
-      // Keep the tag's text/tint honest after a rename or a bond level-up.
-      const tint = bondTint(cat.bondXp);
-      if (agent.tag.userData.tint !== tint || agent.tag.userData.name !== cat.name) {
-        agent.parts.root.remove(agent.tag);
+    for (const entry of entries) {
+      let agent = agents.get(entry.key);
+
+      // A member can swap which cat they bring, which changes the BREED behind an unchanged
+      // key. Rebuilding is the only honest response — the mesh is the breed.
+      if (agent && agent.parts.breed.id !== entry.breed) {
+        disposeTree(agent.parts.root);
         agent.tag.material.map?.dispose();
         agent.tag.material.dispose();
-        const tag = createNameTag(cat.name, tint);
-        tag.visible = agent.tag.visible;
-        tag.userData.tint = tint;
-        tag.userData.name = cat.name;
-        agent.parts.root.add(tag);
-        agent.tag = tag;
+        agents.delete(entry.key);
+        agent = undefined;
+      }
+
+      if (!agent) {
+        const parts = createCat(entry.breed, { scale: 0.98 + rng() * 0.14 });
+        const start = entry.seat ?? spawnPoint(agents.size);
+        const brain = new CatBrain(
+          entry.key,
+          BREEDS[entry.breed],
+          start,
+          entry.seat ? entry.seat.facing : rng.range(-Math.PI, Math.PI),
+        );
+        const animator = new CatAnimator(parts, { phase: rng() * 6.28, reducedMotion: reduced });
+        const tag = createNameTag(entry.label, entry.tint);
+        tag.visible = entry.seat !== null;
+        parts.root.add(tag);
+        catGroup.add(parts.root);
+        agent = {
+          id: entry.key,
+          parts,
+          animator,
+          brain,
+          tag,
+          held: null,
+          petLeft: 0,
+          purring: false,
+          seat: entry.seat,
+          label: entry.label,
+          tint: entry.tint,
+        };
+        agents.set(entry.key, agent);
+      }
+
+      agent.seat = entry.seat;
+      // The cushion becomes a gravitational centre rather than a peg: the cat wanders the
+      // island and drifts back toward its own spot, so the ring stays legible without anyone
+      // being frozen in place.
+      agent.brain.home = entry.seat ? { x: entry.seat.x, z: entry.seat.z } : null;
+      applyOutfit(agent.parts, entry.outfit);
+      if (agent.label !== entry.label || agent.tint !== entry.tint) {
+        retag(agent, entry.label, entry.tint);
       }
     }
 
     refreshPickTargets();
+  }
+
+  /** A guest's bond arrives as a level rather than XP; map it to the same tint ramp. */
+  function guestTint(level: number): string {
+    if (level >= 10) return '#F2B441';
+    if (level >= 7) return '#F0B7C9';
+    if (level >= 4) return '#A9D6C0';
+    return '#C7BFEA';
   }
 
   /**
@@ -486,7 +601,12 @@ export function createWorld(game: Game): World {
 
   unsubs.push(
     bus.on('env:changed', ({ environment }) => {
-      if (environment !== env.id) setEnvironment(environment);
+      // The environment id alone no longer identifies the built scene. The arena is five very
+      // different places, so moving the party from the library to the museum is an arena ->
+      // arena change that must still rebuild — comparing ids would call it a no-op.
+      const staleVenue =
+        environment === 'arena' && env.arena !== null && env.arena.venue !== game.getState().settings.venue;
+      if (environment !== env.id || staleVenue) setEnvironment(environment);
       else rebuildFurniture();
     }),
   );
@@ -504,7 +624,48 @@ export function createWorld(game: Game): World {
 
   /* ------------------------------------------------------------------ core */
 
+  /** The arena's geometry is a function of the party, so a roster change rebuilds it. */
+  function rebuildArena(): void {
+    const state = game.getState();
+    if (state.settings.mode !== 'party') return;
+    const count = state.party.members.length;
+    endBreak();
+    scene.remove(env.group);
+    env.dispose();
+    env = buildEnvironment('arena', {
+      memberCount: count,
+      radius: arenaRadius(count),
+      venue: game.getState().settings.venue,
+    });
+    scene.add(env.group);
+    rebuildFurniture();
+    particles.clear();
+    applyDayNight();
+    for (const agent of agents.values()) {
+      if (agent.seat) agent.brain.placeAt(agent.seat.x, agent.seat.z);
+    }
+    refreshPickTargets();
+  }
+
   function setEnvironment(id: EnvironmentId): void {
+    if (id === 'arena') {
+      const count = game.getState().party.members.length;
+      endBreak();
+      scene.remove(env.group);
+      env.dispose();
+      env = buildEnvironment('arena', {
+      memberCount: count,
+      radius: arenaRadius(count),
+      venue: game.getState().settings.venue,
+    });
+      scene.add(env.group);
+      rebuildFurniture();
+      particles.clear();
+      applyDayNight();
+      syncCats();
+      refreshPickTargets();
+      return;
+    }
     if (env.id === id) return;
     endBreak();
     scene.remove(env.group);
@@ -586,6 +747,14 @@ export function createWorld(game: Game): World {
       return;
     }
 
+    if (env.id === 'arena' && ambientAccumulator > 0.06) {
+      ambientAccumulator = 0;
+      if (env.firePoint) particles.spawn(RECIPES.spark(env.firePoint.x, env.firePoint.y, env.firePoint.z));
+      // Fireflies over the water, so the dark half of the frame is not empty.
+      if (rand() < 0.3) particles.spawn(RECIPES.firefly(floor.w * 1.6, floor.d * 1.6));
+      return;
+    }
+
     if (env.id === 'bonfire' && ambientAccumulator > 0.08) {
       ambientAccumulator = 0;
       if (env.firePoint) particles.spawn(RECIPES.spark(env.firePoint.x, env.firePoint.y, env.firePoint.z));
@@ -621,6 +790,7 @@ export function createWorld(game: Game): World {
   function petAgent(agent: CatAgent): void {
     const result = game.petCat(agent.id);
     if (!result) return;
+    faceViewer(agent);
     agent.animator.setPose('pet');
     agent.brain.freeze('pet', 2.2);
     agent.petLeft = 2.2;
@@ -633,6 +803,19 @@ export function createWorld(game: Game): World {
     particles.burst(7, (i) => RECIPES.heart(p.x, p.y + 0.9, p.z, i));
   }
 
+  /**
+   * Turn a cat to look at whoever just touched it.
+   *
+   * Being acknowledged is the entire point of petting something, and a cat that keeps its back
+   * to you while purring reads as a bug. Uses the live camera position rather than a fixed
+   * front, so it still works after the room has been orbited.
+   */
+  function faceViewer(agent: CatAgent): void {
+    if (!cameraPosition) return;
+    agent.brain.faceToward(cameraPosition.x, cameraPosition.z);
+    if (reduced) agent.parts.root.rotation.y = agent.brain.facing;
+  }
+
   function doTrick(agent: CatAgent): void {
     const cat = game.getState().cats.find((c) => c.id === agent.id);
     if (!cat) return;
@@ -642,6 +825,7 @@ export function createWorld(game: Game): World {
       bus.emit('toast', { title: 'NOT YET', body: `${cat.name} needs a stronger bond first`, icon: '🐾', tone: 'gentle' });
       return;
     }
+    faceViewer(agent);
     agent.animator.setPose(trick);
     agent.brain.freeze(trick, 1.6);
     game.recordTrick(agent.id, TRICK_NAMES[trick] ?? trick);
@@ -681,7 +865,17 @@ export function createWorld(game: Game): World {
       },
       onPet(id) {
         const agent = agents.get(id);
-        if (agent) petAgent(agent);
+        if (!agent) return;
+        // In the arena a click is a CHEER, not a pet: half the cats there belong to other
+        // people (some to guests with no local cat at all), so "build a bond with it" is not a
+        // coherent action. Applauding someone else's cat is.
+        if (env.id === 'arena') {
+          world.cheer(id);
+          game.sendCheer(id);
+          audio.blip();
+          return;
+        }
+        petAgent(agent);
       },
       onDoubleClick(id) {
         const agent = agents.get(id);
@@ -724,6 +918,7 @@ export function createWorld(game: Game): World {
           const clampedX = Math.max(-floor.w / 2 + 0.5, Math.min(floor.w / 2 - 0.5, safeX));
           const clampedZ = Math.max(-floor.d / 2 + 0.5, Math.min(floor.d / 2 - 0.5, safeZ));
           agent.brain.placeAt(clampedX, clampedZ);
+          faceViewer(agent);
           agent.animator.setPose('stand');
         }
         audio.blip();
@@ -743,7 +938,20 @@ export function createWorld(game: Game): World {
 
   function updateCats(dt: number, elapsed: number): void {
     const ctxObstacles = obstacles();
-    const bounds = env.def.floor;
+    // In the arena the walkable area is the island disc, inset so nobody's tail hangs over the
+    // water. Elsewhere it stays the rectangular play footprint.
+    const walkable =
+      env.id === 'arena'
+        ? {
+            ...env.def.floor,
+            radius: arenaRadius(game.getState().party.members.length) + 1.5,
+          }
+        : env.def.floor;
+
+    // Round a fire with friends, cats mill about; they do not settle down to sleep the way they
+    // do beside your desk. Borrowing the livelier 'idle' weight table during a party's focus
+    // session is the whole difference between a circle of statues and a scene with life in it.
+    const arenaMode: BrainMode = env.id === 'arena' && mode === 'focus' ? 'idle' : mode;
 
     // The eye now sits low and inside the room, and at the closest zoom it can end up *within*
     // the cat play rect. Without this a cat walks up to the lens and fills the entire frame.
@@ -764,12 +972,13 @@ export function createWorld(game: Game): World {
       }
 
       const intent = agent.brain.update(dt, {
-        mode,
-        bounds,
+        mode: arenaMode,
+        bounds: walkable,
         obstacles: ctxObstacles,
         feedingActive: feeding.active,
         rng: rand,
         reducedMotion: reduced,
+        wanderlust: env.id === 'arena' ? 2.4 : 1,
       });
 
       if (intent.releaseFood) {
@@ -868,6 +1077,11 @@ export function createWorld(game: Game): World {
         applyDayNight();
       }
 
+      if (env.arena) {
+        const party: PartyState = game.getState().party;
+        const { stage, into } = bonfireProgress(party.sharedMinutes, party.members.length);
+        env.arena.setStage(stage, into);
+      }
       env.update(dt, elapsed, currentPhase, reduced);
       for (const item of placed) item.update?.(dt, elapsed, currentPhase === 'night');
 
@@ -885,6 +1099,53 @@ export function createWorld(game: Game): World {
 
     setCameraPosition(position) {
       cameraPosition = position;
+    },
+
+    catStates() {
+      return [...agents.values()].map((a) => ({
+        id: a.id,
+        label: a.label,
+        x: Math.round(a.brain.x * 1000) / 1000,
+        z: Math.round(a.brain.z * 1000) / 1000,
+        facing: Math.round(a.brain.facing * 1000) / 1000,
+        pose: a.animator.getPose(),
+      }));
+    },
+
+    getFocus() {
+      if (env.id !== 'arena') return null;
+      const count = game.getState().party.members.length;
+      const radius = arenaRadius(count);
+      // The framed volume IS the ring plus a margin, so every extra player literally widens the
+      // shot. This is the whole "the arena expands with the party" behaviour, in one expression.
+      const half = radius + 1.15;
+      return {
+        // Low centre and a shallow vertical half: the camera drops toward the fire rather than
+        // looking down on a diagram of a circle.
+        center: new THREE.Vector3(0, 0.75, 0),
+        half: new THREE.Vector3(half, 1.25, half),
+      };
+    },
+
+    cheer(catKey) {
+      const agent = agents.get(catKey);
+      if (!agent || env.id !== 'arena') return false;
+      // Look up at whoever cheered, then hold the pose long enough to be seen doing it.
+      faceViewer(agent);
+      agent.brain.freeze('sit', 1.8);
+      agent.animator.flashEmotion('love', 1.8);
+      const p = agent.parts.root.position;
+      if (!reduced) {
+        // Hearts rise from the cat and drift toward the fire — a visible, physical "well done".
+        particles.burst(7, (i) => {
+          const spec = RECIPES.heart(p.x, p.y + 1, p.z, i);
+          const toFire = Math.atan2(-p.x, -p.z);
+          spec.vx = Math.sin(toFire) * 1.5;
+          spec.vz = Math.cos(toFire) * 1.5;
+          return spec;
+        });
+      }
+      return true;
     },
 
     setReducedMotion(next) {
@@ -959,8 +1220,17 @@ export function createWorld(game: Game): World {
   rebuildFurniture();
   syncCats();
   game.subscribe((state, prev) => {
-    if (state.cats !== prev.cats) syncCats();
+    if (state.cats !== prev.cats || state.party !== prev.party) syncCats();
     if (state.unlocks.placements !== prev.unlocks.placements) rebuildFurniture();
+    // Party size drives the island, the seats and the lanterns, so it has to rebuild.
+    if (
+      state.settings.mode === 'party' &&
+      env.id === 'arena' &&
+      state.party.members.length !== prev.party.members.length
+    ) {
+      rebuildArena();
+      syncCats();
+    }
   });
 
   const pending = game.getState().pendingVisitor;

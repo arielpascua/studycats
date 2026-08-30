@@ -598,6 +598,8 @@ body {
 .panel__body {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--s5);
@@ -788,6 +790,14 @@ body {
   display: flex;
   align-items: center;
   gap: var(--s3);
+  /* A flex item's default min-width is `auto`, meaning it refuses to shrink below its own
+     content. A text input next to a wide button therefore pushed the row past the panel and
+     clipped the button off the right edge. */
+  min-width: 0;
+}
+
+.field__row > * {
+  min-width: 0;
 }
 
 .field input[type='number'],
@@ -795,6 +805,8 @@ body {
 .field select,
 .field textarea {
   flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
   min-height: 44px;
   padding: var(--s3);
   font-family: var(--font-body);

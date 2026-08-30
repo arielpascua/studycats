@@ -70,9 +70,23 @@ function boot(): void {
     shadows: game.getState().settings.showShadows,
   });
 
-  // Two volumes, two opposite jobs: contain the desk, stay inside the room. Both are set
-  // before the first paint so the opening frame is already an interior one.
-  rig.setFocus(focusFor(globalThis.innerWidth / Math.max(1, globalThis.innerHeight)));
+  // Two volumes, two opposite jobs: contain the subject, stay inside the world. Both are set
+  // before the first paint so the opening frame is already correct.
+  //
+  // The subject differs by mode: solo frames the desk (a constant), the arena frames the ring
+  // (which grows with the party). `syncFocus` is called whenever either could have changed, and
+  // only actually pushes when the volume differs — `setFocus` re-seeds the rig instantly, so
+  // calling it every frame would kill the damping.
+  let focusKey = '';
+  function syncFocus(): void {
+    const arena = world.getFocus();
+    const focus = arena ?? focusFor(rig.camera.aspect);
+    const key = `${focus.center.toArray().join()}|${focus.half.toArray().join()}`;
+    if (key === focusKey) return;
+    focusKey = key;
+    rig.setFocus(focus);
+  }
+  syncFocus();
   rig.setShell(world.getShell());
   world.attachPicking(canvas, rig.camera, {
     orbitBy: (dAz, dEl) => rig.orbitBy(dAz, dEl),
@@ -138,8 +152,11 @@ function boot(): void {
   bus.on('settings:changed', syncAudioToWorld);
   bus.on('env:changed', () => {
     syncAudioToWorld();
-    // A new world has a different shell — re-cap so the eye stays inside this one.
+    // A new world has a different shell — re-cap so the eye stays inside this one — and a
+    // different subject to frame.
     rig.setShell(world.getShell());
+    syncFocus();
+    hud.refreshScenes();
   });
 
   /* --------------------------------------------------------------- camera */
@@ -205,6 +222,9 @@ function boot(): void {
     const h = globalThis.innerHeight;
     renderer.resize(w, h);
     rig.frame(w, h);
+    // rig.frame picks a solo focus box for the new aspect; in the arena the ring wins.
+    focusKey = '';
+    syncFocus();
   }
 
   /**
@@ -315,6 +335,8 @@ function boot(): void {
       t.task,
     );
     world.update(dt, elapsed, wallNow);
+    // Cheap: compares two vectors and returns unless the party size actually changed.
+    syncFocus();
     // The camera rig must be stepped every frame or nothing it owns ever moves: the orbit drag,
     // the scroll zoom, the focus/break dolly and the idle sway are all damped toward targets
     // inside this call.
@@ -543,6 +565,7 @@ function boot(): void {
         fullyVisible: maxX <= 1 && maxY <= 1,
       };
     },
+    cats: () => world.catStates(),
     camera: () => ({
       azimuth: rig.getAzimuth(),
       elevation: rig.getElevation(),

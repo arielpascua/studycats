@@ -12,6 +12,8 @@ import { RADIO_STATIONS, audio } from '../audio/engine';
 import type { Game } from '../store';
 import { resolveReducedMotion } from '../store';
 import { buildCataloguePanel } from './catalogue';
+import { buildPartyPanel } from './party';
+import { COSMETIC_SLOTS, SLOT_LABEL as COSMETIC_SLOT_LABEL, cosmeticsInSlot } from '../data/cosmetics';
 import { buildShopPanel } from './shop';
 import { buildStatsPanel } from './stats';
 import { announce, card, clear, el, emptyState, field, qs, qsa, section, slider, toggle } from './dom';
@@ -27,6 +29,7 @@ export interface PanelHost {
 }
 
 const TITLES: Record<string, string> = {
+  party: 'PARTY',
   cats: 'YOUR CATS',
   shop: 'SHOP',
   stats: 'STATS',
@@ -56,6 +59,8 @@ export function mountPanels(container: HTMLElement, deps: PanelDeps): PanelHost 
         return buildStatsPanel(game);
       case 'catalogue':
         return buildCataloguePanel(game);
+      case 'party':
+        return buildPartyPanel(game, () => rerender());
       case 'settings':
         return buildSettingsPanel(deps, () => rerender());
       case 'cats':
@@ -252,6 +257,56 @@ function buildCatsPanel(game: Game, rerender: () => void): HTMLElement {
       }
     });
 
+    // The wardrobe. Every slot is a select rather than a grid of tiles: four dropdowns fit in
+    // the panel beside the cat they dress, and an outfit is a set of exclusive choices, which is
+    // exactly what a select means.
+    const wardrobe = el('div', { class: 'section' });
+    wardrobe.appendChild(el('h4', { class: 'section__title', text: 'WEARING' }));
+    for (const slot of COSMETIC_SLOTS) {
+      const options = cosmeticsInSlot(slot);
+      const select = el('select', { 'aria-label': `${COSMETIC_SLOT_LABEL[slot]} for ${cat.name}` });
+      select.appendChild(el('option', { value: '', text: '— nothing —' }));
+      for (const item of options) {
+        const owned = s.unlocks.cosmetics.includes(item.id);
+        const affordable = s.economy.coins >= item.price;
+        const option = el('option', {
+          value: item.id,
+          text: owned ? item.name : `${item.name} — ${item.price} 🐟${affordable ? '' : ' (need more)'}`,
+        });
+        // An unaffordable item still shows, so you know what you are saving toward.
+        option.disabled = !owned && !affordable;
+        if (cat.outfit[slot] === item.id) option.selected = true;
+        select.appendChild(option);
+      }
+      select.addEventListener('change', () => {
+        const id = select.value;
+        if (!id) {
+          game.equipCosmetic(cat.id, slot, null);
+          rerender();
+          return;
+        }
+        // Buying and wearing are one gesture: picking something you do not own buys it.
+        if (!game.getState().unlocks.cosmetics.includes(id)) {
+          if (!game.buyCosmetic(id)) {
+            audio.blip();
+            rerender();
+            return;
+          }
+        }
+        game.equipCosmetic(cat.id, slot, id);
+        audio.purchase();
+        rerender();
+      });
+      wardrobe.appendChild(
+        el(
+          'label',
+          { class: 'field' },
+          el('span', { class: 'field__label', text: COSMETIC_SLOT_LABEL[slot] }),
+          el('div', { class: 'field__row' }, select),
+        ),
+      );
+    }
+
     catSection.appendChild(
       el(
         'div',
@@ -264,6 +319,7 @@ function buildCatsPanel(game: Game, rerender: () => void): HTMLElement {
         ),
         pips,
         el('div', { class: 'field__row' }, nameInput, sendHome),
+        wardrobe,
         cat.tricks.length > 0
           ? el('p', { class: 'note', text: `knows: ${cat.tricks.map((t) => t.replace('trick-', '')).join(', ')} — double-click to ask` })
           : el('p', { class: 'note', text: 'pet them to build a bond; tricks come at level 3' }),

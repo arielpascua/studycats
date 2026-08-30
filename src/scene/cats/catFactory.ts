@@ -21,7 +21,9 @@
 import * as THREE from 'three';
 import { BREEDS, type BreedDef, type BreedId } from '../../data/breeds';
 import { hex } from '../../data/palette';
-import { box, boxGeo, canvasTexture, flat, mat, mergedBoxes, redrawCanvasTexture, type BoxSpec } from '../voxel';
+import { box, boxGeo, canvasTexture, disposeTree, flat, mat, mergedBoxes, redrawCanvasTexture, type BoxSpec } from '../voxel';
+import type { CosmeticSlot, Outfit } from '../../data/cosmetics';
+import { buildCosmetic, mountFor, outfitEntries, type WornItem } from './wardrobe';
 
 export type CatEmotion = 'neutral' | 'happy' | 'sleep' | 'eat' | 'love' | 'surprised' | 'blink';
 
@@ -41,6 +43,8 @@ export interface CatParts {
   breed: BreedDef;
   /** Bounding radius on the floor, for path avoidance. */
   radius: number;
+  /** What this cat is currently wearing, by slot. */
+  worn: Map<CosmeticSlot, WornItem>;
 }
 
 const FACE_W = 128;
@@ -334,7 +338,47 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
     mesh.receiveShadow = mesh.name !== 'face';
   });
 
-  return { root, body, headPivot, head, earL, earR, face, legs, tail, extras, faceTexture, breed, radius: 0.55 * scale };
+  return {
+    root,
+    body,
+    headPivot,
+    head,
+    earL,
+    earR,
+    face,
+    legs,
+    tail,
+    extras,
+    faceTexture,
+    breed,
+    radius: 0.55 * scale,
+    worn: new Map(),
+  };
+}
+
+/**
+ * Dress a cat.
+ *
+ * Diffs against what is already worn rather than rebuilding: an outfit change in the wardrobe
+ * fires on every click, and tearing down four groups per click would churn geometry for no
+ * reason. Removed items are disposed, since cosmetic geometry is per-item and not shared.
+ */
+export function applyOutfit(parts: CatParts, outfit: Outfit): void {
+  const wanted = new Map(outfitEntries(outfit));
+
+  for (const [slot, item] of [...parts.worn]) {
+    if (wanted.get(slot) === item.id) continue;
+    disposeTree(item.group);
+    parts.worn.delete(slot);
+  }
+
+  for (const [slot, id] of wanted) {
+    if (parts.worn.get(slot)?.id === id) continue;
+    const item = buildCosmetic(id);
+    if (!item) continue;
+    mountFor(slot, parts).add(item.group);
+    parts.worn.set(slot, item);
+  }
 }
 
 /** Swap the face decal. Cheap — redraws one 64×48 canvas, no new GPU allocation. */
@@ -347,20 +391,25 @@ export function setEmotion(parts: CatParts, emotion: CatEmotion): void {
  * is the only place in the product where a number becomes visible decoration.
  */
 export function createNameTag(name: string, tint: string): THREE.Sprite {
-  const tex = canvasTexture(256, 64, (ctx) => {
-    ctx.fillStyle = 'rgba(59, 42, 68, 0.86)';
-    ctx.fillRect(0, 0, 256, 64);
+  // Multiplayer labels read "Mochi (Alice)", so the tag is sized for a name plus an owner
+  // rather than a name alone, and the texture width tracks the text so a short name does not
+  // float in the middle of an oversized plaque.
+  const label = name.slice(0, 22).toUpperCase();
+  const width = Math.max(256, Math.min(640, 40 + label.length * 26));
+  const tex = canvasTexture(width, 72, (ctx) => {
+    ctx.fillStyle = 'rgba(59, 42, 68, 0.88)';
+    ctx.fillRect(0, 0, width, 72);
     ctx.fillStyle = tint;
-    ctx.fillRect(0, 0, 256, 6);
-    ctx.font = '28px "Silkscreen", monospace';
+    ctx.fillRect(0, 0, width, 7);
+    ctx.font = '26px "Silkscreen", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#FBF2F4';
-    ctx.fillText(name.slice(0, 12).toUpperCase(), 128, 38);
+    ctx.fillText(label, width / 2, 42);
   });
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sprite.scale.set(0.9, 0.22, 1);
-  sprite.position.y = 1.5;
+  sprite.scale.set((width / 256) * 1.25, 0.36, 1);
+  sprite.position.y = 1.62;
   sprite.renderOrder = 10;
   return sprite;
 }

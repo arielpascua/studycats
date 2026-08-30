@@ -5,7 +5,7 @@
 
 ## Suggested prompt
 
-Goal: can we extend the walls and the floor? so it feels that we are in the room.
+Goal: how can players save their progress without accounts?
 
 Deterministic framing (no external model was used):
 - Suggested tier T1, model sonnet (advisory).

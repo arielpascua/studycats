@@ -69,6 +69,10 @@ export function mountHud(game: Game, onOpenPanel: (id: string) => void): Hud {
 
   function refreshScenes(): void {
     const s = game.getState();
+    // The solo scene switcher is meaningless in the clearing — you do not pick a world there,
+    // the party is the world. Hiding the whole block also gives the arena back its left edge.
+    const scenesBlock = sceneList.closest('.scenes') as HTMLElement | null;
+    if (scenesBlock) scenesBlock.hidden = s.settings.mode === 'party';
     clear(sceneList);
     for (const id of ENVIRONMENT_ORDER) {
       const def = ENVIRONMENTS[id];

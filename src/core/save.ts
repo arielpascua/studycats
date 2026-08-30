@@ -20,9 +20,12 @@ import {
   type GameState,
 } from './state';
 import { BREEDS, isBreedId, type BreedId } from '../data/breeds';
-import { ENVIRONMENTS, isEnvironmentId, type EnvironmentId } from '../data/environments';
+import { ENVIRONMENTS, isEnvironmentId, isSoloEnvironmentId, type EnvironmentId } from '../data/environments';
 import { isSnackId } from '../data/snacks';
 import { isFurnitureId, SLOTS, type SlotId } from '../data/furniture';
+import { isCosmeticId, sanitizeOutfit } from '../data/cosmetics';
+import { DEFAULT_VENUE, isVenueId, type VenueId } from '../data/venues';
+import { normalizeParty } from './party';
 import { sanitizeSettings } from './timer';
 import { dayKey } from './time';
 
@@ -113,9 +116,45 @@ function migrate2to3(raw: Raw): Raw {
   return next;
 }
 
+/**
+ * v3 -> v4: multiplayer. Cats gained an `outfit`, the save gained a `party` roster and a
+ * `settings.mode`. Nothing is renamed, so this step only has to establish the new shapes —
+ * normalization fills the rest, and an existing save opens in solo mode with undressed cats,
+ * exactly as it did before.
+ */
+function migrate3to4(raw: Raw): Raw {
+  const next: Raw = { ...raw };
+  next.cats = arr(raw.cats).map((c) => {
+    const cat = obj(c);
+    return { ...cat, outfit: sanitizeOutfit(cat.outfit) };
+  });
+  const unlocks = obj(raw.unlocks);
+  next.unlocks = { ...unlocks, cosmetics: arr(unlocks.cosmetics) };
+  next.settings = { ...obj(raw.settings), mode: 'solo' };
+  next.party = obj(raw.party);
+  next.version = 4;
+  return next;
+}
+
+/**
+ * v4 -> v5: the party can meet somewhere other than the clearing. Adds `unlocks.venues` and
+ * `settings.venue`. Existing parties keep meeting in the clearing, which is the free venue and
+ * therefore the one every save is guaranteed to own.
+ */
+function migrate4to5(raw: Raw): Raw {
+  const next: Raw = { ...raw };
+  const unlocks = obj(raw.unlocks);
+  next.unlocks = { ...unlocks, venues: arr(unlocks.venues) };
+  next.settings = { ...obj(raw.settings), venue: DEFAULT_VENUE };
+  next.version = 5;
+  return next;
+}
+
 const MIGRATIONS: Record<number, (raw: Raw) => Raw> = {
   1: migrate1to2,
   2: migrate2to3,
+  3: migrate3to4,
+  4: migrate4to5,
 };
 
 /** Walk a raw blob up to `SAVE_VERSION`. Unknown/newer versions are passed through untouched. */
@@ -153,6 +192,7 @@ function normalizeCat(input: unknown, today: string, index: number): CatSave | n
     snacksEaten: Math.max(0, Math.floor(num(c.snacksEaten, 0))),
     adoptedOn: str(c.adoptedOn, today),
     tricks: arr(c.tricks).filter((t): t is string => typeof t === 'string').slice(0, 8),
+    outfit: sanitizeOutfit(c.outfit),
     lastGiftDay: typeof c.lastGiftDay === 'string' ? c.lastGiftDay : null,
   };
 }
@@ -193,6 +233,12 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
   const environments = Array.from(
     new Set<EnvironmentId>(['room', ...arr(rawUnlocks.environments).filter(isEnvironmentId)]),
   );
+  // The clearing is always owned: party mode must always have somewhere free to go, and a
+  // save that lost its venue list would otherwise open the party with nowhere to meet.
+  const venues = Array.from(
+    new Set<VenueId>([DEFAULT_VENUE, ...arr(rawUnlocks.venues).filter(isVenueId)]),
+  );
+
   const placements: GameState['unlocks']['placements'] = {};
   for (const [env, slots] of Object.entries(obj(rawUnlocks.placements))) {
     if (!isEnvironmentId(env)) continue;
@@ -223,9 +269,12 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
 
   const rawSettings = obj(raw.settings);
   const rawVolume = obj(rawSettings.volume);
-  const environment: EnvironmentId = isEnvironmentId(rawSettings.environment) && environments.includes(rawSettings.environment)
-    ? rawSettings.environment
-    : 'room';
+  // The arena is never a *solo* environment, however a save was edited: it is reached only by
+  // entering party mode, and dropping into it alone would show an empty ring of cushions.
+  const environment: EnvironmentId =
+    isSoloEnvironmentId(rawSettings.environment) && environments.includes(rawSettings.environment)
+      ? rawSettings.environment
+      : 'room';
 
   const rawDaily = obj(raw.daily);
   const dailyDay = str(rawDaily.day, today);
@@ -261,6 +310,8 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
       placements,
       radio: Array.from(new Set(['lofi', ...arr(rawUnlocks.radio).filter((r): r is string => typeof r === 'string')])),
       filters: Array.from(new Set(['none', ...arr(rawUnlocks.filters).filter((f): f is string => typeof f === 'string')])),
+      cosmetics: Array.from(new Set(arr(rawUnlocks.cosmetics).filter(isCosmeticId) as string[])),
+      venues,
       achievements: arr(rawUnlocks.achievements).filter((a): a is string => typeof a === 'string'),
       visitors: arr(rawUnlocks.visitors).filter((v): v is string => typeof v === 'string'),
       snacksTasted: arr(rawUnlocks.snacksTasted).filter(isSnackId) as string[],
@@ -290,7 +341,10 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
       filter: str(rawSettings.filter, 'none'),
       motion: rawSettings.motion === 'reduced' || rawSettings.motion === 'full' ? rawSettings.motion : 'auto',
       showShadows: rawSettings.showShadows === undefined ? true : Boolean(rawSettings.showShadows),
+      mode: rawSettings.mode === 'party' ? 'party' : 'solo',
       environment,
+      // Same rule as the solo environment: you cannot be standing in a venue you do not own.
+      venue: isVenueId(rawSettings.venue) && venues.includes(rawSettings.venue) ? rawSettings.venue : DEFAULT_VENUE,
       timer: sanitizeSettings(obj(rawSettings.timer) as never),
     },
     quests: {
@@ -305,6 +359,9 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
         .filter((q): q is { id: string; progress: number; claimed: boolean } => q !== null),
     },
     daily,
+    // The roster is validated against the cats that actually exist, so a member pointing at a
+    // cat that was sent home cannot linger and produce an empty seat in the arena.
+    party: normalizeParty(raw.party, (cats.length > 0 ? cats : base.cats).map((c) => c.id)),
     timer: normalizeTimer(obj(raw.timer)),
     pendingVisitor: typeof raw.pendingVisitor === 'string' ? raw.pendingVisitor : null,
     createdOn: str(raw.createdOn, today),

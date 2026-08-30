@@ -1,10 +1,10 @@
 # Task Brief
 
-Generated: 2026-08-29T15:32:12.814Z · Tier T1 · Model sonnet · Confidence 0.9 (heuristic) · Advisory
+Generated: 2026-08-30T06:08:29.622Z · Tier T1 · Model sonnet · Confidence 0.8 (heuristic) · Advisory
 
 ## Original request (redacted)
 
-can we extend the walls and the floor? so it feels that we are in the room.
+how can players save their progress without accounts?
 
 ## Routing (advisory — the orchestrator decides)
 

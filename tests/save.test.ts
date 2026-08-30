@@ -147,6 +147,66 @@ describe('AC-8 migrations', () => {
     expect(state.daily.focusMinutes).toBe(100);
   });
 
+  it('v3 -> v4 opens an existing save in solo mode with undressed cats', () => {
+    const v3 = {
+      version: 3,
+      cats: [{ id: 'c1', breed: 'calico', name: 'Ume', bondXp: 90, tricks: ['trick-spin'] }],
+      economy: { coins: 55 },
+      unlocks: { breeds: ['calico'] },
+      settings: { environment: 'room' },
+    };
+    const state = normalize(migrate(v3).raw, TODAY);
+    expect(state.version).toBe(SAVE_VERSION);
+    // Nothing the player had is lost...
+    expect(state.economy.coins).toBe(55);
+    expect(state.cats[0].bondXp).toBe(90);
+    expect(state.cats[0].tricks).toEqual(['trick-spin']);
+    // ...and the new multiplayer shapes exist but are empty, so the game opens exactly as before.
+    expect(state.cats[0].outfit).toEqual({});
+    expect(state.unlocks.cosmetics).toEqual([]);
+    expect(state.settings.mode).toBe('solo');
+    expect(state.party.members).toEqual([]);
+  });
+
+  it('preserves outfits and the roster across a v4 round-trip', () => {
+    const storage = memoryStorage();
+    const state = createDefaultState(TODAY);
+    state.cats[0].outfit = { hat: 'hat-crown', collar: 'collar-bell' };
+    state.unlocks.cosmetics = ['hat-crown', 'collar-bell'];
+    state.settings.mode = 'party';
+    state.party = {
+      members: [
+        { id: 'a', playerName: 'Alice', catId: state.cats[0].id, guest: null },
+        { id: 'b', playerName: 'Bo', catId: null, guest: { name: 'Yuki', breed: 'snow', outfit: { hat: 'hat-beanie' }, bond: 5 } },
+      ],
+      sharedMinutes: 62,
+      cheers: 4,
+    };
+    saveGame(state, storage);
+    const back = loadGame(storage, TODAY).state;
+    expect(back.cats[0].outfit).toEqual({ hat: 'hat-crown', collar: 'collar-bell' });
+    expect(back.settings.mode).toBe('party');
+    expect(back.party.members).toHaveLength(2);
+    expect(back.party.members[1].guest?.outfit.hat).toBe('hat-beanie');
+    expect(back.party.sharedMinutes).toBe(62);
+  });
+
+  it('drops a party member whose cat was sent home', () => {
+    const state = normalize(
+      {
+        cats: [{ id: 'kept', breed: 'snow', name: 'Yuki' }],
+        party: {
+          members: [
+            { id: 'a', playerName: 'Alice', catId: 'kept' },
+            { id: 'b', playerName: 'Bo', catId: 'deleted-cat' },
+          ],
+        },
+      },
+      TODAY,
+    );
+    expect(state.party.members.map((m) => m.playerName)).toEqual(['Alice']);
+  });
+
   it('a migration never throws on a half-empty old save', () => {
     for (const partial of [{ version: 1 }, { version: 2 }, { version: 1, cats: 'nope' }, {}]) {
       expect(() => normalize(migrate(partial as never).raw, TODAY)).not.toThrow();

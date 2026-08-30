@@ -10,7 +10,11 @@ import { DEFAULT_SNACKS } from '../data/snacks';
 import { STARTER_BREED } from '../data/breeds';
 import { createEconomy, type EconomyState } from './economy';
 import { DEFAULT_TIMER_SETTINGS, type TimerSettings, type TimerSnapshot } from './timer';
+import { createParty, type PartyState } from './party';
+import type { Outfit } from '../data/cosmetics';
 import { dayKey } from './time';
+
+import { DEFAULT_VENUE, type VenueId } from '../data/venues';
 
 export interface CatSave {
   id: string;
@@ -22,6 +26,8 @@ export interface CatSave {
   adoptedOn: string;
   /** Trick ids the cat has learned, gated by bond level. */
   tricks: string[];
+  /** What the cat is wearing. Persisted per cat so an outfit is part of who they are. */
+  outfit: Outfit;
   /** Day key of the last max-bond gift, so it's once per day. */
   lastGiftDay: string | null;
 }
@@ -49,6 +55,10 @@ export interface UnlockState {
   placements: Partial<Record<EnvironmentId, Partial<Record<SlotId, string>>>>;
   radio: string[];
   filters: string[];
+  /** Cosmetics bought and available to every cat. */
+  cosmetics: string[];
+  /** Party venues bought. The clearing is always in here. */
+  venues: VenueId[];
   achievements: string[];
   visitors: string[];
   snacksTasted: string[];
@@ -87,7 +97,11 @@ export interface SettingsState {
   filter: string;
   motion: 'auto' | 'reduced' | 'full';
   showShadows: boolean;
+  /** Solo diorama, or the shared arena. */
+  mode: 'solo' | 'party';
   environment: EnvironmentId;
+  /** Where the party meets. Only read in party mode. */
+  venue: VenueId;
   timer: TimerSettings;
 }
 
@@ -101,12 +115,14 @@ export interface GameState {
   quests: QuestSave;
   daily: DailySave;
   timer: TimerSnapshot;
+  /** Who is in the arena. Empty until someone opens multiplayer. */
+  party: PartyState;
   /** Visitor currently waiting at the diorama edge, if any. */
   pendingVisitor: string | null;
   createdOn: string;
 }
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 5;
 
 export function createCat(breed: BreedId, name: string, id?: string, today: string = dayKey()): CatSave {
   return {
@@ -118,6 +134,7 @@ export function createCat(breed: BreedId, name: string, id?: string, today: stri
     snacksEaten: 0,
     adoptedOn: today,
     tricks: [],
+    outfit: {},
     lastGiftDay: null,
   };
 }
@@ -149,6 +166,8 @@ export function createDefaultState(today: string = dayKey()): GameState {
       placements: {},
       radio: ['lofi'],
       filters: ['none'],
+      cosmetics: [],
+      venues: [DEFAULT_VENUE],
       achievements: [],
       visitors: [],
       snacksTasted: [],
@@ -173,12 +192,15 @@ export function createDefaultState(today: string = dayKey()): GameState {
       filter: 'none',
       motion: 'auto',
       showShadows: true,
+      mode: 'solo',
       environment: 'room',
+      venue: DEFAULT_VENUE,
       timer: { ...DEFAULT_TIMER_SETTINGS },
     },
     quests: { day: today, quests: [] },
     daily: createDaily(today),
     timer: { mode: 'idle', running: false, remainingMs: DEFAULT_TIMER_SETTINGS.focusMin * 60_000, endsAt: null, round: 0, task: '' },
+    party: createParty(),
     pendingVisitor: null,
     createdOn: today,
   };

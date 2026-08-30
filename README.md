@@ -75,8 +75,9 @@ missed day is reported as weather. See `PRODUCT.md`.
 
 ## Verification
 
-- `tests/` — 86 unit tests over the pure core, including a 3 000-operation fuzz that asserts the
-  feeding invariants after **every** operation.
+- `tests/` — 145 unit tests over the pure core, including a 3 000-operation fuzz that asserts the
+  feeding invariants after **every** operation, and a venue suite that pins the camera/ceiling
+  invariant which once rendered the whole arena black during break time.
 - `tools/geometry-probe.mjs` — measures computed layout in a real browser at 1440px and 390px
   (horizontal overflow, unclipped vertical overflow, sibling overlap, touch targets, accessible
   names). Run with `--selftest` it first injects a layout bug and a nameless button and refuses

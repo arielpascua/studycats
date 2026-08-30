@@ -13,6 +13,8 @@ import type { DayPhase } from '../../core/time';
 import { BoxBatch, box, boxGeo, disposeTree, flat, mergedBoxes, type BoxSpec } from '../voxel';
 import { createLaptop, createMug, createPlant, createWindow, type Laptop, type Mug, type Window } from '../props/desk';
 import type { Obstacle } from '../cats/catBrain';
+import { buildArena, type BuiltArena, type Keepout } from './arena';
+import { arenaDefFor, DEFAULT_VENUE, venueDef, type VenueId } from '../../data/venues';
 
 export interface BuiltEnvironment {
   id: EnvironmentId;
@@ -27,6 +29,8 @@ export interface BuiltEnvironment {
   accents: THREE.Light[];
   /** Where the fire is, for spark emission. Null when the world has no fire. */
   firePoint: THREE.Vector3 | null;
+  /** Present only in the arena: the shared bonfire the party grows together. */
+  arena: BuiltArena | null;
   update(dt: number, elapsed: number, phase: DayPhase, reducedMotion: boolean): void;
   dispose(): void;
 }
@@ -480,7 +484,18 @@ function buildCafe(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obst
 
 /* ------------------------------------------------------------------ assembly */
 
-export function buildEnvironment(id: EnvironmentId): BuiltEnvironment {
+export interface BuildOptions {
+  /** Party size, for the arena. Ignored by the solo worlds. */
+  memberCount?: number;
+  /** Ring radius, for the arena. Ignored by the solo worlds. */
+  radius?: number;
+  /** Which party venue to build. Ignored by the solo worlds. */
+  venue?: VenueId | string;
+}
+
+export function buildEnvironment(id: EnvironmentId, options: BuildOptions = {}): BuiltEnvironment {
+  if (id === 'arena') return buildArenaEnvironment(options);
+
   const def = ENVIRONMENTS[id];
   const group = new THREE.Group();
   group.name = `env:${id}`;
@@ -570,6 +585,7 @@ export function buildEnvironment(id: EnvironmentId): BuiltEnvironment {
     obstacles,
     accents,
     firePoint,
+    arena: null,
     update(dt, elapsed, phase, reducedMotion) {
       laptop.update(dt, elapsed, reducedMotion);
       mug.update(dt, reducedMotion);
@@ -595,6 +611,89 @@ export function buildEnvironment(id: EnvironmentId): BuiltEnvironment {
       }
     },
     dispose() {
+      disposeTree(group);
+    },
+  };
+}
+
+
+/**
+ * The arena, presented through the same interface as every other world.
+ *
+ * The party's shared timer still needs somewhere to live, so the laptop sits on a stump by the
+ * fire rather than being deleted: it keeps the clock legible *in the world*, and it means every
+ * code path that draws the timer keeps working unchanged in multiplayer.
+ */
+function buildArenaEnvironment(options: BuildOptions): BuiltEnvironment {
+  const venue = venueDef(options.venue ?? DEFAULT_VENUE);
+  // The arena's def is themed by venue, so day/night, the ambience layer, the snack pool and the
+  // scene label all follow the party somewhere new without any of that code knowing about venues.
+  const def = arenaDefFor(venue.id);
+  const memberCount = Math.max(2, Math.min(8, options.memberCount ?? 2));
+  const radius = options.radius ?? 3.2;
+
+  const group = new THREE.Group();
+  group.name = `env:arena:${venue.id}`;
+
+  // A stand just outside the ring, with the shared laptop on it. Declared before the arena so
+  // the arena can be told to keep its posts out of this spot — they used to be drawn inside
+  // each other whenever the party size put a post gap dead behind the ring.
+  const stumpX = 0;
+  const stumpZ = -(radius + 1.9);
+  const keepouts: Keepout[] = [{ x: stumpX, z: stumpZ, r: 1.5 }];
+
+  const arena = buildArena(radius, memberCount, venue.id, keepouts);
+  group.add(arena.group);
+
+  const stump = mergedBoxes(
+    [
+      { w: 1.5, h: 0.7, d: 1.5, x: stumpX, y: 0.35, z: stumpZ },
+      { w: 1.65, h: 0.12, d: 1.65, x: stumpX, y: 0.72, z: stumpZ },
+    ],
+    hex(venue.theme.hearth.baseAccent),
+  );
+  if (stump) {
+    stump.receiveShadow = true;
+    group.add(stump);
+  }
+
+  const laptop = createLaptop();
+  laptop.group.position.set(stumpX, 0.78, stumpZ);
+  // A laptop's screen faces +z in its own space, and the stump sits on the FAR side of the fire
+  // from the default camera. Turning it 180 degrees therefore pointed the screen away from
+  // everyone — the back of the lid was all you could see. Aim it at the fire instead, which is
+  // also where the party and the camera are.
+  laptop.group.rotation.y = Math.atan2(-stumpX, -stumpZ);
+  group.add(laptop.group);
+
+  const mug = createMug(PALETTE.paper, PALETTE.mint);
+  mug.group.position.set(stumpX + 0.72, 0.78, stumpZ + 0.25);
+  group.add(mug.group);
+
+  const obstacles: Obstacle[] = [
+    // Nobody walks through the fire.
+    { x: 0, z: 0, r: 1.6 },
+    { x: stumpX, z: stumpZ, r: 1.1 },
+  ];
+
+  return {
+    id: 'arena',
+    def,
+    group,
+    laptop,
+    mug,
+    window: null,
+    obstacles,
+    accents: [arena.fireLight, arena.moonLight, laptop.light],
+    firePoint: arena.firePoint,
+    arena,
+    update(dt, elapsed, _phase, reducedMotion) {
+      laptop.update(dt, elapsed, reducedMotion);
+      mug.update(dt, reducedMotion);
+      arena.update(dt, elapsed, reducedMotion);
+    },
+    dispose() {
+      arena.dispose();
       disposeTree(group);
     },
   };
