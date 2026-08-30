@@ -206,7 +206,9 @@ export class CatAnimator {
     p.body.rotation.z = L.bodyRoll;
     p.body.scale.set(L.squashX, L.squashY, L.squashX);
 
-    p.headPivot.position.y = 0.52 + L.bodyY;
+    // Must match headPivot's rest height in catFactory. The head is the big shape now and
+    // sits lower on a smaller body; a stale constant here floats it off the shoulders.
+    p.headPivot.position.y = 0.46 + L.bodyY;
     p.headPivot.rotation.set(L.headPitch + L.bodyPitch * 0.5, L.headYaw, L.headRoll + L.bodyRoll * 0.6);
 
     p.earL.rotation.z = L.earTilt;

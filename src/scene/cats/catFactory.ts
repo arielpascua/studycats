@@ -161,8 +161,8 @@ function buildEyes(breed: BreedDef): { mesh: THREE.Mesh; texture: THREE.CanvasTe
     // on +z by default, so an iris drawn at the middle of the texture ends up on the SIDE of the
     // eyeball, facing the cat's ear. Starting phi a quarter-turn back puts u=0.5 — the middle of
     // the canvas, where the iris is — squarely on the front of the eye.
-    const g = new THREE.SphereGeometry(0.105, 14, 12, -Math.PI / 2, Math.PI * 2);
-    g.translate(sx * 0.125, 0, 0);
+    const g = new THREE.SphereGeometry(0.125, 14, 12, -Math.PI / 2, Math.PI * 2);
+    g.translate(sx * 0.155, 0, 0);
     geos.push(g);
   }
   const merged = mergeGeometries(geos, false)!;
@@ -229,14 +229,14 @@ function patchSpecs(breed: BreedDef): BoxSpec[] {
  */
 function buildEar(color: number): THREE.Group {
   const g = new THREE.Group();
-  const mesh = mergedRounded(
-    [
-      { w: 0.18, h: 0.12, d: 0.07, y: 0.06 },
-      { w: 0.1, h: 0.1, d: 0.06, y: 0.17 },
-    ],
-    color,
-    0.03,
-  );
+  // Four narrowing slabs read as a cone at this scale and keep the voxel family, where an
+  // actual ConeGeometry would be the only smooth-sided thing on the whole cat.
+  const specs: BoxSpec[] = [];
+  for (let i = 0; i < 4; i++) {
+    const w = 0.2 - i * 0.042;
+    specs.push({ w, h: 0.075, d: Math.max(0.05, 0.09 - i * 0.012), y: 0.037 + i * 0.072 });
+  }
+  const mesh = mergedRounded(specs, color, 0.022);
   if (mesh) g.add(mesh);
   return g;
 }
@@ -259,12 +259,16 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
   root.scale.setScalar(scale);
 
   /* ---- body: a loaf of boxes, merged into one mesh ---- */
+  // Proportions are the whole game here. A cat reads as appealing when the head is the big
+  // shape and the body is the small one; the old loaf was 0.72 x 0.46 x 0.90 under a 0.66 head,
+  // which is a realistic animal and therefore a forgettable one. The body has come DOWN and the
+  // head has gone UP so the head is now decisively the larger mass.
   const bodySpecs: BoxSpec[] = [
-    { w: 0.72, h: 0.46, d: 0.9, y: 0.34 },
-    { w: 0.6, h: 0.36, d: 0.3, y: 0.3, z: 0.44 }, // chest
-    { w: 0.64, h: 0.4, d: 0.28, y: 0.36, z: -0.42 }, // haunches
+    { w: 0.62, h: 0.42, d: 0.74, y: 0.3 },
+    { w: 0.54, h: 0.34, d: 0.26, y: 0.27, z: 0.36 }, // chest
+    { w: 0.56, h: 0.36, d: 0.24, y: 0.31, z: -0.35 }, // haunches
   ];
-  const body = mergedRounded(bodySpecs, bodyColor, 0.16)!;
+  const body = mergedRounded(bodySpecs, bodyColor, 0.19)!;
   body.name = 'body';
   root.add(body);
 
@@ -278,40 +282,40 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
   /* ---- head ---- */
   const headPivot = new THREE.Group();
   headPivot.name = 'headPivot';
-  headPivot.position.set(0, 0.52, 0.5);
+  headPivot.position.set(0, 0.46, 0.42);
   root.add(headPivot);
 
   const head = mergedRounded(
     [
-      { w: 0.66, h: 0.56, d: 0.56, y: 0.2 }, // oversized skull
-      { w: 0.3, h: 0.18, d: 0.14, y: 0.12, z: 0.31 }, // muzzle
+      { w: 0.82, h: 0.74, d: 0.72, y: 0.3 }, // the big shape
+      { w: 0.3, h: 0.17, d: 0.12, y: 0.19, z: 0.38 }, // muzzle
     ],
     bodyColor,
-    0.2,
+    0.27,
   )!;
   head.name = 'head';
   headPivot.add(head);
 
   const earL = buildEar(earColor);
-  earL.position.set(-0.2, 0.44, 0.02);
+  earL.position.set(-0.24, 0.6, 0.0);
   earL.name = 'earL';
   const earR = buildEar(breed.style === 'patch' ? patchColor : earColor);
-  earR.position.set(0.2, 0.44, 0.02);
+  earR.position.set(0.24, 0.6, 0.0);
   earR.name = 'earR';
   headPivot.add(earL, earR);
 
   const faceTexture = canvasTexture(FACE_W, FACE_H, (ctx) => drawFace(ctx, breed, 'neutral'));
   const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.56, 0.42),
+    new THREE.PlaneGeometry(0.64, 0.48),
     new THREE.MeshBasicMaterial({ map: faceTexture, transparent: true }),
   );
   face.name = 'face';
-  face.position.set(0, 0.22, 0.286);
+  face.position.set(0, 0.34, 0.366);
   headPivot.add(face);
 
   // Real eyes, standing proud of the face decal so the highlight catches at a grazing angle.
   const { mesh: eyes } = buildEyes(breed);
-  eyes.position.set(0, 0.245, 0.30);
+  eyes.position.set(0, 0.37, 0.35);
   headPivot.add(eyes);
 
   /* ---- legs: hip joints at the top, box hanging below ---- */
@@ -353,7 +357,7 @@ export function createCat(breedId: BreedId, opts: CatFactoryOptions = {}): CatPa
     const seg = new THREE.Group();
     seg.name = `tail${i}`;
     if (i === 0) {
-      seg.position.set(0, 0.46, -0.5);
+      seg.position.set(0, 0.4, -0.42);
     } else {
       seg.position.set(0, 0, -0.16);
     }

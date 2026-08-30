@@ -278,3 +278,52 @@ production constants rather than restating them. Findings worth keeping:
 - `shell.ceiling` is the eye's limit and `ROOM_LID` is where the slab is drawn. When a venue drew
   its lid at the eye's own height, the rig climbed above it during break framing and rendered the
   room from the roof — a black screen. A test now pins the gap.
+
+
+## 10. The cats
+
+The cats were rebuilt after the owner compared them to a smooth Three.js character and called
+them "so boxy". They were right, and the diagnosis was narrower than it looked: in a close-up the
+desk, laptop and walls shade perfectly well. It was the cats.
+
+### What actually made them read as boxes
+
+1. **The face was a sticker.** A 16x12 pixel grid painted on a flat `PlaneGeometry`. At any
+   distance that is a decal, and a decal has no highlight that moves when the head turns. This
+   was the single biggest cause, ahead of the geometry.
+2. **Hard 90-degree corners** on every part, and a tail made of four literal rectangular sticks.
+3. **Realistic proportions.** A 0.72-wide body under a 0.66 head is an animal; it is not a
+   character. Appeal comes from making the head decisively the big shape.
+
+### What was done
+
+- `roundedGeo` / `mergedRounded` / `roundedBox` in `voxel.ts`, backed by `RoundedBoxGeometry`.
+  Rounded boxes merge exactly like square ones, so **soft edges cost nothing in draw calls**.
+  Only the cats use them: the world stays hard-edged, because a desk should look milled.
+- **Eyes are real geometry** — two spheres merged into one mesh sharing a small canvas texture
+  carrying sclera, iris, pupil and a specular dot. One extra draw call per cat, not four.
+- **Proportions rebalanced**: body down to 0.62 x 0.42 x 0.74, head up to 0.82 x 0.74 x 0.72,
+  ears tapered over four narrowing slabs.
+
+### The couplings that make this risky
+
+Three constants outside `catFactory.ts` encode the cat's proportions and must move with them.
+Miss one and the head floats off the shoulders or a hat sinks into the skull:
+
+| Constant | Where | Why |
+|---|---|---|
+| `headPivot.position.y` rest height | `catAnimator.ts` | Hardcoded; the animator re-sets it every frame |
+| `MOUNT.hat`, `MOUNT.charm` | `wardrobe.ts` | Ride the head |
+| `MOUNT.collar`, `MOUNT.cape` | `wardrobe.ts` | Ride the body |
+
+The animator is otherwise safe to build against: it touches **only** `position`, `rotation` and
+`scale` on the pivots, and never reads a geometry dimension. It does look up three meshes by
+name — `capeCloth`, `scarfTail`, `patches` — so those names are API.
+
+### Two bugs worth remembering
+
+- A sphere's UVs wrap equirectangularly and `u=0.25` lands on +z, so an iris drawn at the middle
+  of its texture ends up on the **side** of the eyeball, facing the cat's ear. `phiStart` of
+  -90 degrees puts the middle of the canvas on the front of the eye.
+- `MeshBasicMaterial` is unlit, so the first version of the eyes ran at full brightness in every
+  room and the cats read as headlights in the dark cafe.

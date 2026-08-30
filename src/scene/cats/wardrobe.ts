@@ -27,10 +27,12 @@ export interface WornItem {
 
 /** Where each slot attaches, in the local space of its joint. */
 const MOUNT: Record<CosmeticSlot, { x: number; y: number; z: number }> = {
-  hat: { x: 0, y: 0.5, z: 0 },
-  collar: { x: 0, y: 0.5, z: 0.42 },
-  cape: { x: 0, y: 0.52, z: -0.12 },
-  charm: { x: 0, y: 1.02, z: 0 },
+  // Relative to whatever part mountFor() attaches them to. The hat and charm ride the head, so
+  // they moved when the head grew; the collar and cape ride the body, which shrank.
+  hat: { x: 0, y: 0.68, z: 0 },
+  collar: { x: 0, y: 0.44, z: 0.34 },
+  cape: { x: 0, y: 0.46, z: -0.1 },
+  charm: { x: 0, y: 1.16, z: 0 },
 };
 
 function buildHat(shape: string, a: number, b: number): THREE.Group {
