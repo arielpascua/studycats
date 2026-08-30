@@ -1,10 +1,10 @@
 # Task Brief
 
-Generated: 2026-08-30T12:33:16.492Z · Tier T1 · Model sonnet · Confidence 0.9 (heuristic) · Advisory
+Generated: 2026-08-30T13:38:04.865Z · Tier T1 · Model sonnet · Confidence 0.9 (heuristic) · Advisory
 
 ## Original request (redacted)
 
-use generating-site-imagery skill if need to generate pictures
+make it closer to minecraft cats instead
 
 ## Routing (advisory — the orchestrator decides)
 

@@ -5,7 +5,7 @@
 
 ## Suggested prompt
 
-Goal: use generating-site-imagery skill if need to generate pictures
+Goal: make it closer to minecraft cats instead
 
 Deterministic framing (no external model was used):
 - Suggested tier T1, model sonnet (advisory).

@@ -282,37 +282,36 @@ production constants rather than restating them. Findings worth keeping:
 
 ## 10. The cats
 
-The cats were rebuilt after the owner compared them to a smooth Three.js character and called
-them "so boxy". They were right, and the diagnosis was narrower than it looked: in a close-up the
-desk, laptop and walls shade perfectly well. It was the cats.
+The cats are **Minecraft cats**: hard-edged boxes, a long low body carried clear of the floor on
+four tall thin legs, a small cube head with the face painted on it, small stepped ears and a long
+thin tail.
 
-### What actually made them read as boxes
+This is the second target they were built to. The first was a smooth, round-headed character
+from a Three.js demo, and the two are near-opposites — bevelled versus sharp, big head on a small
+body versus small head on a long one, modelled eyeballs versus painted pixels. That direction is
+in the history if it is ever wanted back; nothing of it survives in the current cat except the
+`roundedGeo` / `mergedRounded` helpers in `voxel.ts`, which stay because they cost nothing and
+may be useful elsewhere.
 
-1. **The face was a sticker.** A 16x12 pixel grid painted on a flat `PlaneGeometry`. At any
-   distance that is a decal, and a decal has no highlight that moves when the head turns. This
-   was the single biggest cause, ahead of the geometry.
-2. **Hard 90-degree corners** on every part, and a tail made of four literal rectangular sticks.
-3. **Realistic proportions.** A 0.72-wide body under a 0.66 head is an animal; it is not a
-   character. Appeal comes from making the head decisively the big shape.
+### What makes it read as Minecraft
 
-### What was done
+| | |
+|---|---|
+| **Hard edges** | No bevels anywhere on the cat. `mergedBoxes`, not `mergedRounded`. |
+| **Daylight under the belly** | The body sits at y 0.55 on 0.30-tall legs. This gap is most of the silhouette; the previous cat sat almost on the floor. |
+| **A long, narrow body** | 0.40 x 0.38 x 0.86 — over twice as long as it is wide. |
+| **A small head** | A 0.42 cube out in front, not the dominant mass. |
+| **Painted eyes** | Flat slabs of iris with a dark pupil and one white glint, on a plane flush with the front of the skull. Modelled eyeballs are the most un-Minecraft thing you can do to this face. |
+| **Two-block ears** | A slab and a smaller slab. Anything more elaborate stops looking like Minecraft. |
 
-- `roundedGeo` / `mergedRounded` / `roundedBox` in `voxel.ts`, backed by `RoundedBoxGeometry`.
-  Rounded boxes merge exactly like square ones, so **soft edges cost nothing in draw calls**.
-  Only the cats use them: the world stays hard-edged, because a desk should look milled.
-- **Eyes are real geometry** — two spheres merged into one mesh sharing a small canvas texture
-  carrying sclera, iris, pupil and a specular dot. One extra draw call per cat, not four.
-- **Proportions rebalanced**: body down to 0.62 x 0.42 x 0.74, head up to 0.82 x 0.74 x 0.72,
-  ears tapered over four narrowing slabs.
-
-### The couplings that make this risky
+### The couplings that make changing proportions risky
 
 Three constants outside `catFactory.ts` encode the cat's proportions and must move with them.
 Miss one and the head floats off the shoulders or a hat sinks into the skull:
 
 | Constant | Where | Why |
 |---|---|---|
-| `headPivot.position.y` rest height | `catAnimator.ts` | Hardcoded; the animator re-sets it every frame |
+| `headPivot.position.y` rest height | `catAnimator.ts` | Hardcoded, and re-set every frame, so it beats the factory |
 | `MOUNT.hat`, `MOUNT.charm` | `wardrobe.ts` | Ride the head |
 | `MOUNT.collar`, `MOUNT.cape` | `wardrobe.ts` | Ride the body |
 
@@ -320,10 +319,8 @@ The animator is otherwise safe to build against: it touches **only** `position`,
 `scale` on the pivots, and never reads a geometry dimension. It does look up three meshes by
 name — `capeCloth`, `scarfTail`, `patches` — so those names are API.
 
-### Two bugs worth remembering
+### A bug worth remembering
 
-- A sphere's UVs wrap equirectangularly and `u=0.25` lands on +z, so an iris drawn at the middle
-  of its texture ends up on the **side** of the eyeball, facing the cat's ear. `phiStart` of
-  -90 degrees puts the middle of the canvas on the front of the eye.
-- `MeshBasicMaterial` is unlit, so the first version of the eyes ran at full brightness in every
-  room and the cats read as headlights in the dark cafe.
+A sphere's UVs wrap equirectangularly and `u=0.25` lands on +z, so an iris drawn at the middle of
+its texture ends up on the **side** of the eyeball, facing the cat's ear. That cost an hour during
+the modelled-eye experiment. `phiStart` of -90 degrees is the fix, if spheres ever come back.
