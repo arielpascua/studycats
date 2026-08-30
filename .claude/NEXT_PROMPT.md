@@ -5,7 +5,7 @@
 
 ## Suggested prompt
 
-Goal: these doesn't render properly. after school and quiet museum wall or tv
+Goal: use generating-site-imagery skill if need to generate pictures
 
 Deterministic framing (no external model was used):
 - Suggested tier T1, model sonnet (advisory).

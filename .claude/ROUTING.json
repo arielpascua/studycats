@@ -1,8 +1,8 @@
 {
   "version": "1",
-  "generatedAt": "2026-08-30T11:52:35.873Z",
-  "promptRedacted": "these doesn't render properly. after school and quiet museum wall or tv",
-  "promptHash": "5a06196b1a10ee637e7e7f1755a996f809849ae6a67f86aa37c55db7e4a6b26e",
+  "generatedAt": "2026-08-30T12:33:16.492Z",
+  "promptRedacted": "use generating-site-imagery skill if need to generate pictures",
+  "promptHash": "d82f05dcda980a26196696e83b18a8d4f7f9d746ee12ed412d5ebf024772c0fa",
   "tier": "T1",
   "model": "sonnet",
   "confidence": 0.9,
@@ -15,16 +15,7 @@
     "floor": "none"
   },
   "securityReview": false,
-  "agents": [
-    {
-      "name": "frontend-engineer",
-      "owns": [
-        "ui/**",
-        "client/**"
-      ],
-      "reason": "matched ui"
-    }
-  ],
+  "agents": [],
   "gates": [
     "fmt",
     "lint",

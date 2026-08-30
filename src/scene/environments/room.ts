@@ -33,7 +33,7 @@ import { BONFIRE_STAGES } from '../../core/party';
 import { seatLayout } from '../../core/seating';
 import { CLASSROOM_COLUMNS, ROOM_LID, ROOM_MAX_XZ, roomDef, roomSize, type RoomId, type RoomTheme } from '../../data/rooms';
 import type { Obstacle } from '../cats/catBrain';
-import { BoxBatch, boxGeo, flat, type BoxSpec } from '../voxel';
+import { BoxBatch, boxGeo, canvasTexture, flat, toonGradient, type BoxSpec } from '../voxel';
 
 export interface BuiltRoom {
   group: THREE.Group;
@@ -107,33 +107,67 @@ function spines(
 }
 
 /**
- * A framed picture hung on a wall face.
+ * The canvas inside a museum frame, painted in code.
  *
- * `face` is the wall's inner plane; the frame sits against it and the canvas stands proud of the
- * frame, so no two surfaces are ever coplanar.
+ * These are the one place in the game that wanted real pictures. They are drawn rather than
+ * imported for the same reason every other texture here is: the project ships no raster assets,
+ * so there is nothing to 404, nothing to license and nothing to keep in sync with the palette.
+ * Each painting is a horizon, a few bands and one simple subject, seeded by index so the wing
+ * looks curated rather than random and looks the same every time you walk in.
  */
-function picture(
-  batch: BoxBatch,
-  along: number,
-  y: number,
-  face: number,
-  w: number,
-  h: number,
-  frame: string,
-  art: string,
-  facing: 'x' | 'z',
-): void {
-  const t = 0.12;
-  const frameAt = mount(face, t);
-  const artAt = mount(face, t * 0.6, t + 0.02);
-  if (facing === 'z') {
-    batch.add({ w, h, d: t, x: along, y, z: frameAt }, hex(frame));
-    batch.add({ w: w - 0.26, h: h - 0.26, d: t * 0.6, x: along, y, z: artAt }, hex(art));
-  } else {
-    batch.add({ w: t, h, d: w, x: frameAt, y, z: along }, hex(frame));
-    batch.add({ w: t * 0.6, h: h - 0.26, d: w - 0.26, x: artAt, y, z: along }, hex(art));
-  }
+const PAINTINGS: Array<{ sky: string; land: string; accent: string; subject: 'sun' | 'peaks' | 'moon' | 'grove' }> = [
+  { sky: '#E8C9C0', land: '#7A4E52', accent: '#C97A98', subject: 'sun' },
+  { sky: '#CFE0E8', land: '#3E5A66', accent: '#7FA9C4', subject: 'peaks' },
+  { sky: '#D8E0C8', land: '#4E6446', accent: '#8FA97F', subject: 'grove' },
+  { sky: '#E4DCC4', land: '#6E5A3E', accent: '#D9A26B', subject: 'moon' },
+];
+
+function paintingTexture(index: number): THREE.CanvasTexture {
+  const p = PAINTINGS[index % PAINTINGS.length];
+  return canvasTexture(96, 120, (ctx) => {
+    const w = 96;
+    const h = 120;
+    const horizon = Math.round(h * 0.62);
+
+    ctx.fillStyle = p.sky;
+    ctx.fillRect(0, 0, w, horizon);
+
+    // The subject sits on the horizon so every painting shares a composition and the four read
+    // as one collection.
+    ctx.fillStyle = p.accent;
+    if (p.subject === 'sun' || p.subject === 'moon') {
+      const r = p.subject === 'sun' ? 15 : 11;
+      const cy = horizon - 34;
+      for (let y = -r; y <= r; y++) {
+        const span = Math.round(Math.sqrt(r * r - y * y));
+        ctx.fillRect(w / 2 - span, cy + y, span * 2, 1);
+      }
+    } else if (p.subject === 'peaks') {
+      for (const [cx, height] of [[30, 42], [62, 30]] as Array<[number, number]>) {
+        for (let y = 0; y < height; y++) {
+          const half = Math.round((y / height) * 22);
+          ctx.fillRect(cx - half, horizon - height + y, half * 2, 1);
+        }
+      }
+    } else {
+      for (const [cx, top] of [[26, 30], [48, 44], [70, 34]] as Array<[number, number]>) {
+        ctx.fillRect(cx - 2, horizon - top, 4, top);
+        ctx.fillRect(cx - 10, horizon - top - 12, 20, 16);
+      }
+    }
+
+    ctx.fillStyle = p.land;
+    ctx.fillRect(0, horizon, w, h - horizon);
+    // Two paler bands in the foreground: a field, and enough tonal separation that the lower
+    // half is not one dead rectangle.
+    ctx.fillStyle = p.accent;
+    ctx.globalAlpha = 0.28;
+    ctx.fillRect(0, horizon + 10, w, 6);
+    ctx.fillRect(0, horizon + 26, w, 4);
+    ctx.globalAlpha = 1;
+  });
 }
+
 
 /* ---------------------------------------------------------------- furniture */
 
@@ -151,6 +185,8 @@ interface FurnishContext {
   halfX: number;
   halfZ: number;
   obstacles: Obstacle[];
+  /** Anything a furnishing allocates itself and must therefore free. */
+  disposables: Array<{ dispose(): void }>;
 }
 
 function furnishLibrary(c: FurnishContext): void {
@@ -405,11 +441,22 @@ function furnishMuseum(c: FurnishContext): void {
     );
   }
 
-  // Framed pictures on the wall everyone is facing.
-  const art = ['#7A4E52', '#4E6E7A', '#6E7A4E', '#7A6A4E'];
+  // Framed pictures on the wall everyone is facing. The frame merges into the batch; the canvas
+  // is its own mesh because it carries a texture and cannot merge with flat colour.
   for (let i = 0; i < 4; i++) {
     const x = -3.6 + i * 2.4;
-    picture(batch, x, 3.0, c.faceZ, 1.7, 2.1, theme.woodDark, art[i % art.length], 'z');
+    batch.add({ w: 1.7, h: 2.1, d: 0.12, x, y: 3.0, z: mount(c.faceZ, 0.12) }, hex(theme.woodDark));
+
+    const tex = paintingTexture(i);
+    const canvasMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.44, 1.84),
+      new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGradient() }),
+    );
+    canvasMesh.position.set(x, 3.0, mount(c.faceZ, 0, 0.15));
+    canvasMesh.castShadow = false;
+    canvasMesh.receiveShadow = false;
+    c.group.add(canvasMesh);
+    c.disposables.push(tex, canvasMesh.geometry, canvasMesh.material as THREE.Material);
   }
 
   // More of the gallery: small plinths with their own pieces, receding toward the viewer. A
@@ -527,6 +574,7 @@ export function buildRoom(roomId: RoomId | string, memberCount: number): BuiltRo
   /* ------------------------------------------------------------- furniture */
 
   const obstacles: Obstacle[] = [];
+  const disposables: Array<{ dispose(): void }> = [];
   FURNISH[def.id]({
     batch,
     group,
@@ -539,6 +587,7 @@ export function buildRoom(roomId: RoomId | string, memberCount: number): BuiltRo
     halfX: seats.halfX,
     halfZ: seats.halfZ,
     obstacles,
+    disposables,
   });
 
   // Cushions last, so they sit on top of whatever seating the room built.
@@ -633,6 +682,9 @@ export function buildRoom(roomId: RoomId | string, memberCount: number): BuiltRo
     },
 
     dispose() {
+      // Textures and per-room geometry are NOT shared through the voxel caches, so nothing else
+      // will free them when the room is swapped.
+      for (const d of disposables) d.dispose();
       group.clear();
     },
   };
