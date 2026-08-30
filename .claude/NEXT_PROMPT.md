@@ -5,7 +5,7 @@
 
 ## Suggested prompt
 
-Goal: how can players save their progress without accounts?
+Goal: re-render the scenes. forget about arena, scenes should be actual museum, school, library, conference room, etc.
 
 Deterministic framing (no external model was used):
 - Suggested tier T1, model sonnet (advisory).

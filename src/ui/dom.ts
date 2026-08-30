@@ -44,6 +44,66 @@ export function qsa<T extends Element = HTMLElement>(selector: string, root: Par
   return Array.from(root.querySelectorAll<T>(selector));
 }
 
+export interface DisclosureOptions {
+  /** Short count or status shown beside the title, so a *collapsed* section still tells you
+   *  what is inside. A disclosure that hides its own contents without saying how many there
+   *  are just makes the user open everything to find out. */
+  badge?: string;
+  /** Start expanded. Defaults to false — the whole point is a shop you can scan. */
+  open?: boolean;
+  onToggle?(open: boolean): void;
+}
+
+let disclosureSeq = 0;
+
+/**
+ * A collapsible `section`.
+ *
+ * The markup is the standard accordion pattern rather than a clickable div: an `h3` (so the
+ * panel keeps its heading outline for screen-reader navigation) wrapping a real `<button>`
+ * (so it is focusable and operable by keyboard for free), with `aria-expanded` on the button
+ * and `aria-controls` pointing at the region it shows. Collapsing sets `hidden`, which the
+ * global `[hidden] { display: none !important }` rule enforces.
+ */
+export function collapsibleSection(
+  title: string,
+  options: DisclosureOptions = {},
+  ...children: Child[]
+): HTMLElement {
+  const id = `disclosure-${++disclosureSeq}`;
+  const open = options.open === true;
+
+  const content = el('div', { class: 'section__content', id }, ...children);
+  content.hidden = !open;
+
+  const toggle = el(
+    'button',
+    {
+      type: 'button',
+      class: 'section__toggle',
+      'aria-expanded': open ? 'true' : 'false',
+      'aria-controls': id,
+    },
+    el('span', { class: 'section__chevron', 'aria-hidden': 'true' }),
+    el('span', { class: 'section__title', text: title }),
+    options.badge ? el('span', { class: 'section__badge', text: options.badge }) : null,
+  );
+
+  toggle.addEventListener('click', () => {
+    const next = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
+    content.hidden = !next;
+    options.onToggle?.(next);
+  });
+
+  return el(
+    'div',
+    { class: 'section section--collapsible' },
+    el('h3', { class: 'section__heading' }, toggle),
+    content,
+  );
+}
+
 /** A labelled section wrapper used all over the panels. */
 export function section(title: string, ...children: Child[]): HTMLElement {
   return el('div', { class: 'section' }, el('h3', { class: 'section__title', text: title }), ...children);

@@ -626,6 +626,87 @@ body {
   color: var(--ink-soft);
 }
 
+/* ---------------------------------------------------------- collapsible sections */
+
+.section--collapsible {
+  gap: var(--s2);
+}
+
+.section__heading {
+  margin: 0;
+  /* The heading exists for the outline; the button inside it carries all the styling. */
+  font: inherit;
+}
+
+.section__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  /* Comfortably past the 44px touch minimum, which the geometry probe enforces. */
+  min-height: 44px;
+  padding: var(--s2) var(--s3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.section__toggle:hover {
+  background: var(--paper-2);
+}
+
+.section__toggle .section__title {
+  /* Let the title shrink before the badge does — a long category name should ellipsize rather
+     than push the count off the edge of the panel. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section__chevron {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  /* A CSS triangle rather than a glyph: Silkscreen has no arrow coverage and would tofu. */
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid var(--ink-soft);
+  transition: transform 140ms ease;
+}
+
+.section__toggle[aria-expanded='true'] .section__chevron {
+  transform: rotate(90deg);
+}
+
+.section__badge {
+  flex: 0 0 auto;
+  padding: 0 var(--s2);
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--butter);
+  font-family: var(--font-display);
+  font-size: 0.6875rem;
+  color: var(--ink);
+}
+
+.section__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding-top: var(--s2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section__chevron {
+    transition: none;
+  }
+}
+
 .note {
   margin: 0;
   font-size: 0.8125rem;

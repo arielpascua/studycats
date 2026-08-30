@@ -13,7 +13,21 @@ import { SNACKS, SNACK_ORDER } from '../data/snacks';
 import { RADIO_STATIONS } from '../audio/engine';
 import type { Game } from '../store';
 import { audio } from '../audio/engine';
-import { card, el, emptyState, section } from './dom';
+import { card, collapsibleSection, el, emptyState } from './dom';
+
+/**
+ * Which categories are open, remembered across rerenders.
+ *
+ * The panel is rebuilt from scratch after every purchase, so without this the shop would snap
+ * back to its default shape the moment you bought anything — you would fold away the snacks,
+ * buy a cat, and find the snacks unfolded again. This is view state, not game state, so it
+ * lives here rather than in the save.
+ */
+const openCategories = new Map<string, boolean>();
+
+/** The shop opens showing one category expanded, so it reads as a list of aisles, not a wall. */
+const FIRST_CATEGORY = 'ADOPT A CAT';
+openCategories.set(FIRST_CATEGORY, true);
 
 export function buildShopPanel(game: Game, rerender: () => void): HTMLElement {
   const s = game.getState();
@@ -21,6 +35,20 @@ export function buildShopPanel(game: Game, rerender: () => void): HTMLElement {
   const body = el('div', { class: 'panel__body' });
 
   const afford = (price: number) => coins >= price;
+
+  /** A shop aisle: collapsible, and its header carries the count so a folded aisle still says
+   *  how much is in it. */
+  function aisle(title: string, count: number, ...children: Array<Node | string | null>): HTMLElement {
+    return collapsibleSection(
+      title,
+      {
+        badge: count > 0 ? String(count) : '✓',
+        open: openCategories.get(title) === true,
+        onToggle: (open) => openCategories.set(title, open),
+      },
+      ...children,
+    );
+  }
 
   function buy(action: () => boolean): void {
     if (action()) {
@@ -53,8 +81,9 @@ export function buildShopPanel(game: Game, rerender: () => void): HTMLElement {
   });
 
   body.appendChild(
-    section(
-      'ADOPT A CAT',
+    aisle(
+      FIRST_CATEGORY,
+      adoptable.filter((b) => !s.cats.some((c) => c.breed === b.id)).length,
       el('p', { class: 'note', text: `you have ${coins} 🐟. a cat costs what it costs; nobody is going anywhere.` }),
       ...adoptCards,
     ),
@@ -63,8 +92,9 @@ export function buildShopPanel(game: Game, rerender: () => void): HTMLElement {
   const lockedRares = BREED_ORDER.map((id) => BREEDS[id]).filter((b) => !isAdoptable(b) && !s.unlocks.breeds.includes(b.id));
   if (lockedRares.length > 0) {
     body.appendChild(
-      section(
+      aisle(
         'NOT FOR SALE',
+        lockedRares.length,
         ...lockedRares.map((breed) =>
           card({
             icon: '❓',
@@ -82,8 +112,9 @@ export function buildShopPanel(game: Game, rerender: () => void): HTMLElement {
 
   const lockedSnacks = SNACK_ORDER.filter((id) => !s.unlocks.snacks.includes(id));
   body.appendChild(
-    section(
+    aisle(
       'SNACKS',
+      lockedSnacks.length,
       lockedSnacks.length === 0
         ? emptyState('🍙', 'THE WHOLE MENU', 'every snack is in the rotation. the cats have opinions about all of them.')
         : null,
@@ -106,8 +137,9 @@ export function buildShopPanel(game: Game, rerender: () => void): HTMLElement {
   const lockedWorlds = ENVIRONMENT_ORDER.filter((id) => !s.unlocks.environments.includes(id));
   if (lockedWorlds.length > 0) {
     body.appendChild(
-      section(
+      aisle(
         'PLACES TO STUDY',
+        lockedWorlds.length,
         ...lockedWorlds.map((id) => {
           const def = ENVIRONMENTS[id];
           return card({
@@ -130,8 +162,9 @@ export function buildShopPanel(game: Game, rerender: () => void): HTMLElement {
   const forSale = FURNITURE_ORDER.filter((id) => !s.unlocks.furniture.includes(id) && allowedIn(id, env));
 
   body.appendChild(
-    section(
+    aisle(
       'FURNITURE',
+      forSale.length,
       forSale.length === 0
         ? emptyState('🪑', 'NOTHING LEFT TO BUY', 'you own everything that fits in here. try another world.')
         : null,
@@ -152,49 +185,57 @@ export function buildShopPanel(game: Game, rerender: () => void): HTMLElement {
   /* ------------------------------------------------------------ placement */
 
   const owned = s.unlocks.furniture.filter((id) => allowedIn(id, env));
-  const placementSection = section('PUT IT SOMEWHERE');
-  if (owned.length === 0) {
-    placementSection.appendChild(
-      emptyState('📦', 'NOTHING DELIVERED YET', 'buy a rug or a cushion above, then drop it into a spot here.'),
-    );
-  } else {
-    for (const slot of SLOTS) {
-      const options = owned.filter((id) => fitsSlot(id, slot));
-      if (options.length === 0) continue;
-      const current = placements[slot] ?? '';
+  // Built as a list first rather than appended to the section: a collapsible section nests its
+  // children inside the region the toggle controls, so appending to the wrapper afterwards
+  // would put them outside it and they would never hide.
+  const placementRows: Array<Node | null> = [];
+  for (const slot of SLOTS) {
+    const options = owned.filter((id) => fitsSlot(id, slot));
+    if (options.length === 0) continue;
+    const current = placements[slot] ?? '';
 
-      const select = el('select', { 'aria-label': `What goes in the ${SLOT_LABEL[slot].toLowerCase()}` });
-      select.appendChild(el('option', { value: '', text: '— empty —' }));
-      for (const id of options) {
-        const option = el('option', { value: id, text: FURNITURE[id].name });
-        if (id === current) option.selected = true;
-        select.appendChild(option);
-      }
-      select.addEventListener('change', () => {
-        audio.blip();
-        game.placeFurniture(select.value || null, slot as SlotId);
-        rerender();
-      });
-
-      placementSection.appendChild(
-        el(
-          'label',
-          { class: 'field' },
-          el('span', { class: 'field__label', text: SLOT_LABEL[slot] }),
-          el('div', { class: 'field__row' }, select),
-        ),
-      );
+    const select = el('select', { 'aria-label': `What goes in the ${SLOT_LABEL[slot].toLowerCase()}` });
+    select.appendChild(el('option', { value: '', text: '— empty —' }));
+    for (const id of options) {
+      const option = el('option', { value: id, text: FURNITURE[id].name });
+      if (id === current) option.selected = true;
+      select.appendChild(option);
     }
+    select.addEventListener('change', () => {
+      audio.blip();
+      game.placeFurniture(select.value || null, slot as SlotId);
+      rerender();
+    });
+
+    placementRows.push(
+      el(
+        'label',
+        { class: 'field' },
+        el('span', { class: 'field__label', text: SLOT_LABEL[slot] }),
+        el('div', { class: 'field__row' }, select),
+      ),
+    );
   }
-  body.appendChild(placementSection);
+
+  body.appendChild(
+    aisle(
+      'PUT IT SOMEWHERE',
+      placementRows.length,
+      placementRows.length === 0
+        ? emptyState('📦', 'NOTHING DELIVERED YET', 'buy a rug or a cushion above, then drop it into a spot here.')
+        : null,
+      ...placementRows,
+    ),
+  );
 
   /* ---------------------------------------------------------------- radio */
 
   const lockedRadio = RADIO_STATIONS.filter((r) => !s.unlocks.radio.includes(r.id));
   if (lockedRadio.length > 0) {
     body.appendChild(
-      section(
+      aisle(
         'RADIO',
+        lockedRadio.length,
         ...lockedRadio.map((station) =>
           card({
             icon: '📻',

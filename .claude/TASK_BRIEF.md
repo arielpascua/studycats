@@ -1,10 +1,10 @@
 # Task Brief
 
-Generated: 2026-08-30T06:08:29.622Z · Tier T1 · Model sonnet · Confidence 0.8 (heuristic) · Advisory
+Generated: 2026-08-30T07:13:13.919Z · Tier T1 · Model sonnet · Confidence 0.65 (heuristic) · Advisory
 
 ## Original request (redacted)
 
-how can players save their progress without accounts?
+re-render the scenes. forget about arena, scenes should be actual museum, school, library, conference room, etc.
 
 ## Routing (advisory — the orchestrator decides)
 
