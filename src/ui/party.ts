@@ -37,7 +37,8 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
     { type: 'button', class: 'btn btn--primary' },
     inParty ? 'BACK TO YOUR ROOM' : `GO TO THE ${venue.label}`,
   );
-  modeBtn.disabled = !inParty && party.members.length < MIN_PARTY;
+  const short = !inParty && party.members.length < MIN_PARTY;
+  modeBtn.disabled = short;
   modeBtn.addEventListener('click', () => {
     audio.blip();
     game.setMode(inParty ? 'solo' : 'party');
@@ -52,7 +53,11 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
         class: 'note',
         text: inParty
           ? `everyone studies to the same clock, and every minute feeds the ${venue.hearthName}.`
-          : `${venue.blurb}. add ${MIN_PARTY} players or more to go.`,
+          : short
+            // A disabled button with no explanation is a dead end. Say what is missing and what
+            // to do about it, in the same breath.
+            ? `${venue.blurb}. a party is other people — you bring one cat, and you need at least ${MIN_PARTY - party.members.length} more ${party.members.length === MIN_PARTY - 1 ? 'person' : 'people'} before you can go.`
+            : `${venue.blurb}. everyone is here — head over whenever you like.`,
       }),
       modeBtn,
     ),

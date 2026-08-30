@@ -323,3 +323,51 @@ describe('AC-8 export / import', () => {
     expect(describeSave(state)).toMatch(/1 cat · 99 🐟/);
   });
 });
+
+describe('you cannot be standing in a party that does not exist', () => {
+  const guest = { name: 'Yuki', breed: 'snow', outfit: {}, bond: 3 };
+
+  it('drops to solo when the roster collapses below the minimum', () => {
+    // A save written by an older build: several of your OWN cats seated. The one-cat-per-device
+    // rule keeps the first and drops the rest, which can leave the party under MIN_PARTY.
+    const state = normalize({
+      version: SAVE_VERSION,
+      cats: [
+        { id: 'cat-a', breed: 'strawberry', name: 'Mochi' },
+        { id: 'cat-b', breed: 'snow', name: 'Shadow' },
+      ],
+      settings: { mode: 'party' },
+      party: {
+        members: [
+          { id: 'a', playerName: 'Alice', catId: 'cat-a', guest: null },
+          { id: 'b', playerName: 'Bo', catId: 'cat-b', guest: null },
+        ],
+      },
+    } as never);
+
+    expect(state.party.members).toHaveLength(1);
+    expect(state.settings.mode).toBe('solo');
+  });
+
+  it('stays in party mode when the roster is genuinely big enough', () => {
+    const state = normalize({
+      version: SAVE_VERSION,
+      cats: [{ id: 'cat-a', breed: 'strawberry', name: 'Mochi' }],
+      settings: { mode: 'party' },
+      party: {
+        members: [
+          { id: 'a', playerName: 'Alice', catId: 'cat-a', guest: null },
+          { id: 'b', playerName: 'Bo', catId: null, guest },
+        ],
+      },
+    } as never);
+
+    expect(state.party.members).toHaveLength(2);
+    expect(state.settings.mode).toBe('party');
+  });
+
+  it('drops to solo when there is no party at all', () => {
+    const state = normalize({ version: SAVE_VERSION, settings: { mode: 'party' } } as never);
+    expect(state.settings.mode).toBe('solo');
+  });
+});

@@ -25,7 +25,7 @@ import { isSnackId } from '../data/snacks';
 import { isFurnitureId, SLOTS, type SlotId } from '../data/furniture';
 import { isCosmeticId, sanitizeOutfit } from '../data/cosmetics';
 import { DEFAULT_VENUE, isVenueId, type VenueId } from '../data/venues';
-import { normalizeParty } from './party';
+import { MIN_PARTY, normalizeParty } from './party';
 import { sanitizeSettings } from './timer';
 import { dayKey } from './time';
 
@@ -251,6 +251,10 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
     placements[env] = bySlot;
   }
 
+  // The party is resolved before settings, because whether you can BE in party mode depends on
+  // whether the party survived normalization.
+  const party = normalizeParty(raw.party, (cats.length > 0 ? cats : base.cats).map((c) => c.id));
+
   const rawStats = obj(raw.stats);
   const perDay: GameState['stats']['perDay'] = {};
   for (const [day, entry] of Object.entries(obj(rawStats.perDay))) {
@@ -341,7 +345,11 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
       filter: str(rawSettings.filter, 'none'),
       motion: rawSettings.motion === 'reduced' || rawSettings.motion === 'full' ? rawSettings.motion : 'auto',
       showShadows: rawSettings.showShadows === undefined ? true : Boolean(rawSettings.showShadows),
-      mode: rawSettings.mode === 'party' ? 'party' : 'solo',
+      // You cannot be standing in a party that does not exist. A save can arrive below the
+      // minimum for honest reasons — the one-cat-per-device rule dropped members written by an
+      // older build, or the file was edited — and without this you load into the venue alone,
+      // with a shared timer and a bonfire and nobody to share them with.
+      mode: rawSettings.mode === 'party' && party.members.length >= MIN_PARTY ? 'party' : 'solo',
       environment,
       // Same rule as the solo environment: you cannot be standing in a venue you do not own.
       venue: isVenueId(rawSettings.venue) && venues.includes(rawSettings.venue) ? rawSettings.venue : DEFAULT_VENUE,
@@ -361,7 +369,7 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
     daily,
     // The roster is validated against the cats that actually exist, so a member pointing at a
     // cat that was sent home cannot linger and produce an empty seat in the arena.
-    party: normalizeParty(raw.party, (cats.length > 0 ? cats : base.cats).map((c) => c.id)),
+    party,
     timer: normalizeTimer(obj(raw.timer)),
     pendingVisitor: typeof raw.pendingVisitor === 'string' ? raw.pendingVisitor : null,
     createdOn: str(raw.createdOn, today),
