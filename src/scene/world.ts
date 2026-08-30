@@ -150,7 +150,7 @@ export function createWorld(game: Game): World {
   let env: BuiltEnvironment = buildEnvironment(activeEnvironment(bootState), {
     memberCount: bootState.party.members.length,
     radius: arenaRadius(bootState.party.members.length),
-    venue: bootState.settings.venue,
+    room: bootState.settings.room,
   });
   scene.add(env.group);
 
@@ -605,7 +605,7 @@ export function createWorld(game: Game): World {
       // different places, so moving the party from the library to the museum is an arena ->
       // arena change that must still rebuild — comparing ids would call it a no-op.
       const staleVenue =
-        environment === 'arena' && env.arena !== null && env.arena.venue !== game.getState().settings.venue;
+        environment === 'arena' && env.party !== null && env.room !== game.getState().settings.room;
       if (environment !== env.id || staleVenue) setEnvironment(environment);
       else rebuildFurniture();
     }),
@@ -635,7 +635,7 @@ export function createWorld(game: Game): World {
     env = buildEnvironment('arena', {
       memberCount: count,
       radius: arenaRadius(count),
-      venue: game.getState().settings.venue,
+      room: game.getState().settings.room,
     });
     scene.add(env.group);
     rebuildFurniture();
@@ -656,7 +656,7 @@ export function createWorld(game: Game): World {
       env = buildEnvironment('arena', {
       memberCount: count,
       radius: arenaRadius(count),
-      venue: game.getState().settings.venue,
+      room: game.getState().settings.room,
     });
       scene.add(env.group);
       rebuildFurniture();
@@ -1077,10 +1077,10 @@ export function createWorld(game: Game): World {
         applyDayNight();
       }
 
-      if (env.arena) {
+      if (env.party) {
         const party: PartyState = game.getState().party;
         const { stage, into } = bonfireProgress(party.sharedMinutes, party.members.length);
-        env.arena.setStage(stage, into);
+        env.party.setStage(stage, into);
       }
       env.update(dt, elapsed, currentPhase, reduced);
       for (const item of placed) item.update?.(dt, elapsed, currentPhase === 'night');

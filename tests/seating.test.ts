@@ -19,7 +19,8 @@ import {
   type SeatPlanSpec,
 } from '../src/core/seating';
 import { MAX_PARTY, MIN_PARTY } from '../src/core/party';
-import { ROOMS, ROOM_ORDER, ROOM_CEILING, ROOM_LID, ROOM_MAX_XZ, roomSize } from '../src/data/rooms';
+import { ROOMS, ROOM_ORDER, ROOM_CEILING, ROOM_LID, ROOM_MAX_XZ, DEFAULT_ROOM, roomSize } from '../src/data/rooms';
+import { migrate, normalize } from '../src/core/save';
 import {
   AZIMUTH_DEFAULT,
   AZIMUTH_MAX,
@@ -218,5 +219,35 @@ describe('the room the eye is allowed in', () => {
         expect(size.walkable.d / 2, `${id} n=${n} floor shallower than its seats`).toBeGreaterThan(halfZ);
       }
     }
+  });
+});
+
+describe('save v5 -> v6: venues become rooms', () => {
+  it('carries every paid-for venue across to the room that replaced it', () => {
+    const { raw } = migrate({
+      version: 5,
+      unlocks: { venues: ['clearing', 'school', 'museum'] },
+      settings: { mode: 'party', venue: 'school' },
+    } as never);
+
+    const state = normalize(raw);
+    // The clearing has no successor, so its owner lands in the free room rather than losing it.
+    expect(state.unlocks.rooms.sort()).toEqual(['classroom', 'library', 'museum']);
+    expect(state.settings.room).toBe('classroom');
+  });
+
+  it('never leaves a save standing in a room it does not own', () => {
+    const state = normalize({
+      version: 7,
+      unlocks: { rooms: ['library'] },
+      settings: { room: 'museum' },
+    } as never);
+    expect(state.settings.room).toBe(DEFAULT_ROOM);
+  });
+
+  it('always owns the free room, whatever the save said', () => {
+    const state = normalize({ version: 7, unlocks: { rooms: [] } } as never);
+    expect(state.unlocks.rooms).toContain(DEFAULT_ROOM);
+    expect(ROOMS[DEFAULT_ROOM].price).toBe(0);
   });
 });

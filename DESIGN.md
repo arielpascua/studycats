@@ -226,42 +226,48 @@ loading · error · empty**. Specifically:
 - Keyboard shortcuts are suppressed while an `<input>`/`<textarea>` has focus.
 
 
-## 9. Party mode and the five venues
+## 9. Party mode and the four rooms
 
-Party mode is local and account-free (`PRODUCT.md`: no network call after first load). A friend's
-cat arrives as a **cat card** — a base64url blob with an FNV checksum, pasted in by hand — so the
-roster is real without a server being real. Each member is one player and one cat, labelled
-`Mochi (Alice)`.
+Party mode is local and account-free today; `PRODUCT.md` records the owner's decision to replace
+that with real online multiplayer, which is not built yet.
 
-### One builder, five places
+### Actual rooms, not one disc in four palettes
 
-`src/scene/environments/arena.ts` is a single builder; `src/data/venues.ts` supplies values.
-The clearing, the library, the café, the rooftop and the museum are the same skeleton:
+The first attempt was a circular island with a ring of cushions, reskinned per venue. It failed
+the only test that matters: the library and the museum were the same picture in different
+colours. `scene/environments/room.ts` now builds rectangular interiors — a reading table between
+walls of shelves, rows of desks facing a chalkboard, a long table under a screen, benches before
+a lit case.
 
-| | floor disc | seats + posts | hearth | surround |
+| | seating | runs along | the wall you face | fills the near floor with |
 |---|---|---|---|---|
-| Moonlit clearing | stone island on water | cushions, lanterns | campfire, 5 flame tiers | treeline, open sky |
-| Night library | wood, rug rings | cushions, green lamps | reading lamp, stacked shades | shelves of books |
-| Late café | warm wood | cushions, warm sconces | espresso bar, rising steam | lit window panes |
-| Rooftop class | rooftop tile | cushions, lanterns | rooftop lantern | city skyline, open sky |
-| Quiet museum | marble | benches, uplights | exhibit crystal | colonnade + gallery wall |
+| Night library | table | z | shelves + rolling ladder | a second reading table |
+| After-school room | rows | x | chalkboard, tray, clock | rows of empty desks |
+| Meeting room | table | x | projector screen | spare chairs, a plant |
+| Quiet museum | benches | x | framed pictures | more plinths |
 
-This is deliberate. Five hand-built scenes would be five chances to get the party scaling wrong;
-one builder means **every** venue widens with the roster, because there is only one place where
-the widening is written.
+Two rooms run their seating along z and two along x. At the fixed 180-270 degree camera arc a run
+and its transpose cost exactly the same to frame but look completely different, so it is the
+cheapest way to stop four rooms reading as one.
 
-### Rules the venues have to obey (and the tests that pin them)
+### The numbers are measured, not chosen
 
-- **`shell.ceiling` is the eye's limit, and an interior has a real lid.** Left at the open-sky
-  value, the camera rig climbed *above* the ceiling while framing a break and rendered the room
-  from the roof — a black screen. `arenaDefFor` derives the shell ceiling from the venue's lid.
-- **A gapped surround needs a backdrop.** A colonnade you can see between leaked 29% of the
-  frame's top edge to bare background. One merged wall ring behind it, one draw call.
-- **Bands bucket by colour across every row before merging.** A wall of books is 150 boxes in
-  7 colours: bucketed, that is 7 draw calls; merged per row it was 42, which put the arena
-  exactly on its 300-call ceiling.
-- **Posts take keepouts.** The laptop stand sits behind the ring, and for even party sizes a
-  post gap lands in exactly that spot — the two were drawn inside each other. The stand passes
-  its own circle in rather than the arena hardcoding where the furniture is.
-- **The point light never casts.** A `PointLight` shadow is a cube map: six extra scene renders.
-  The key light casts; the hearth only lights. In the picture you cannot tell.
+`core/seating.ts` reports the half-extent of the seated party; `data/rooms.ts` derives the floor,
+focus volume, shell and walkable area from it. Nothing else computes a room dimension, so "grows
+with the party" is written once.
+
+A walled interior is much harder to shoot than the old open island, because the shell clamps the
+eye and it cannot simply back away until everyone fits. `tests/seating.test.ts` sweeps the real
+rig over every pose, party size and aspect and fails if anything crops, and it imports the
+production constants rather than restating them. Findings worth keeping:
+
+- **Portrait at eight members is the binding case.** `PITCH` 1.6 crops three of four rooms; 1.4
+  passes. `FURNITURE_MARGIN` 1.6 crops; 1.1 passes.
+- **The room cannot be made smaller.** Every value of `ROOM_MAX_XZ` below 21.5 crops, so the near
+  floor is in shot whatever we do. The fix is furniture, not a smaller room: a classroom with
+  three desks in an empty hall reads as a mistake; one with twenty reads as a classroom.
+- **People sit across a table, not zig-zagged down it.** Alternating sides at half-pitch cuts an
+  eight-seat run from 8.05 to 5.60, which is what makes the whole thing framable.
+- `shell.ceiling` is the eye's limit and `ROOM_LID` is where the slab is drawn. When a venue drew
+  its lid at the eye's own height, the rig climbed above it during break framing and rendered the
+  room from the roof — a black screen. A test now pins the gap.

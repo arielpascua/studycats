@@ -24,7 +24,7 @@ import { ENVIRONMENTS, isEnvironmentId, isSoloEnvironmentId, type EnvironmentId 
 import { isSnackId } from '../data/snacks';
 import { isFurnitureId, SLOTS, type SlotId } from '../data/furniture';
 import { isCosmeticId, sanitizeOutfit } from '../data/cosmetics';
-import { DEFAULT_VENUE, isVenueId, type VenueId } from '../data/venues';
+import { DEFAULT_ROOM, isRoomId, type RoomId } from '../data/rooms';
 import { MIN_PARTY, normalizeParty } from './party';
 import { sanitizeSettings } from './timer';
 import { dayKey } from './time';
@@ -145,8 +145,45 @@ function migrate4to5(raw: Raw): Raw {
   const next: Raw = { ...raw };
   const unlocks = obj(raw.unlocks);
   next.unlocks = { ...unlocks, venues: arr(unlocks.venues) };
-  next.settings = { ...obj(raw.settings), venue: DEFAULT_VENUE };
+  // Literal, not a constant: this step must keep producing the v5 shape forever, and the
+  // v5 venue ids no longer exist as a type. migrate5to6 maps them on to rooms.
+  next.settings = { ...obj(raw.settings), venue: 'clearing' };
   next.version = 5;
+  return next;
+}
+
+/**
+ * v5 -> v6: the party meets in a real room, not on a disc.
+ *
+ * The circular arena and its five "venues" are gone; the party now sits in an actual library,
+ * classroom, meeting room or gallery. Anything the player already paid for is carried across to
+ * the room that replaced it rather than refunded or silently dropped — the moonlit clearing had
+ * no successor, so its owners land in the library, which is the new free room.
+ */
+const VENUE_TO_ROOM: Record<string, string> = {
+  clearing: 'library',
+  library: 'library',
+  school: 'classroom',
+  cafe: 'conference',
+  museum: 'museum',
+};
+
+function migrate5to6(raw: Raw): Raw {
+  const next: Raw = { ...raw };
+  const unlocks = obj(raw.unlocks);
+  const owned = arr(unlocks.venues)
+    .map((v) => (typeof v === 'string' ? VENUE_TO_ROOM[v] : undefined))
+    .filter((v): v is string => Boolean(v));
+  const { venues: _dropped, ...restUnlocks } = unlocks;
+  next.unlocks = { ...restUnlocks, rooms: owned };
+
+  const settings = obj(raw.settings);
+  const { venue, ...restSettings } = settings;
+  next.settings = {
+    ...restSettings,
+    room: (typeof venue === 'string' ? VENUE_TO_ROOM[venue] : undefined) ?? DEFAULT_ROOM,
+  };
+  next.version = 6;
   return next;
 }
 
@@ -155,6 +192,7 @@ const MIGRATIONS: Record<number, (raw: Raw) => Raw> = {
   2: migrate2to3,
   3: migrate3to4,
   4: migrate4to5,
+  5: migrate5to6,
 };
 
 /** Walk a raw blob up to `SAVE_VERSION`. Unknown/newer versions are passed through untouched. */
@@ -233,10 +271,10 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
   const environments = Array.from(
     new Set<EnvironmentId>(['room', ...arr(rawUnlocks.environments).filter(isEnvironmentId)]),
   );
-  // The clearing is always owned: party mode must always have somewhere free to go, and a
-  // save that lost its venue list would otherwise open the party with nowhere to meet.
-  const venues = Array.from(
-    new Set<VenueId>([DEFAULT_VENUE, ...arr(rawUnlocks.venues).filter(isVenueId)]),
+  // The free room is always owned: party mode must always have somewhere to meet, and a save
+  // that lost its room list would otherwise open the party with nowhere to go.
+  const rooms = Array.from(
+    new Set<RoomId>([DEFAULT_ROOM, ...arr(rawUnlocks.rooms).filter(isRoomId)]),
   );
 
   const placements: GameState['unlocks']['placements'] = {};
@@ -315,7 +353,7 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
       radio: Array.from(new Set(['lofi', ...arr(rawUnlocks.radio).filter((r): r is string => typeof r === 'string')])),
       filters: Array.from(new Set(['none', ...arr(rawUnlocks.filters).filter((f): f is string => typeof f === 'string')])),
       cosmetics: Array.from(new Set(arr(rawUnlocks.cosmetics).filter(isCosmeticId) as string[])),
-      venues,
+      rooms,
       achievements: arr(rawUnlocks.achievements).filter((a): a is string => typeof a === 'string'),
       visitors: arr(rawUnlocks.visitors).filter((v): v is string => typeof v === 'string'),
       snacksTasted: arr(rawUnlocks.snacksTasted).filter(isSnackId) as string[],
@@ -351,8 +389,8 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
       // with a shared timer and a bonfire and nobody to share them with.
       mode: rawSettings.mode === 'party' && party.members.length >= MIN_PARTY ? 'party' : 'solo',
       environment,
-      // Same rule as the solo environment: you cannot be standing in a venue you do not own.
-      venue: isVenueId(rawSettings.venue) && venues.includes(rawSettings.venue) ? rawSettings.venue : DEFAULT_VENUE,
+      // Same rule as the solo environment: you cannot be standing in a room you do not own.
+      room: isRoomId(rawSettings.room) && rooms.includes(rawSettings.room) ? rawSettings.room : DEFAULT_ROOM,
       timer: sanitizeSettings(obj(rawSettings.timer) as never),
     },
     quests: {

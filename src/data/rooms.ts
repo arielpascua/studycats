@@ -24,7 +24,9 @@
  * binding case and it is not close; treat every number below as load-bearing.
  */
 
-import type { SeatPlanSpec } from '../core/seating';
+import { seatLayout, type SeatPlanSpec } from '../core/seating';
+import type { EnvironmentDef } from './environments';
+import type { DayPhase } from '../core/time';
 
 /**
  * Distance between same-side neighbours along a run. Members advance half of this, alternating
@@ -63,14 +65,54 @@ export const ROOM_LID = 17.4;
 
 export type RoomId = 'library' | 'classroom' | 'conference' | 'museum';
 
+/**
+ * A room's look. Only values — the builder is shared, so a room is its palette, its wall
+ * treatment, its furniture kit and its light, and nothing structural.
+ */
+export interface RoomTheme {
+  /** Floorboards / tiles / marble, alternating so the floor is not one flat sheet. */
+  floorA: string;
+  floorB: string;
+  /** Board width in world units; 0.9 is a floorboard, 2.2 is a marble slab. */
+  floorPitch: number;
+  /** The lower, lit part of the walls, and the darker part above it. */
+  wallLow: string;
+  wallHigh: string;
+  /** Skirting / dado rail / cornice trim. */
+  trim: string;
+  /** Where the lit band stops and the dark upper wall begins. */
+  dadoY: number;
+  /** The main furniture body (table, desks, benches) and its accent. */
+  wood: string;
+  woodDark: string;
+  /** Seat cushions. */
+  seatA: string;
+  seatB: string;
+  key: { color: string; intensity: number; position: [number, number, number] };
+  ambient: { color: string; intensity: number };
+  /** Backdrop behind any window/door opening — never the raw sky. */
+  sky: string;
+  hearth: {
+    /** What the shared, growing object is called, in the panel and in toasts. */
+    name: string;
+    /** Five colours, bottom tier first. */
+    tiers: [string, string, string, string, string];
+    light: string;
+    reach: number;
+  };
+}
+
 export interface RoomDef {
   id: RoomId;
   label: string;
   blurb: string;
   icon: string;
   price: number;
+  ambience: 'room' | 'birds' | 'fire' | 'cafe';
+  snacks: readonly string[];
   /** Where the party sits, and therefore how big the room is. */
   plan: SeatPlanSpec;
+  theme: RoomTheme;
 }
 
 /**
@@ -88,7 +130,19 @@ export const ROOMS: Record<RoomId, RoomDef> = {
     blurb: 'green lamps, high shelves, nobody talking above a whisper',
     icon: '📚',
     price: 0,
+    ambience: 'room',
+    snacks: ['cocoa', 'milkbread', 'croissant', 'macaron', 'sandwich'],
     plan: { kind: 'table', axis: 'z', pitch: PITCH, offset: SEAT_OFFSET, face: 'across' },
+    theme: {
+      floorA: '#7A5540', floorB: '#8A6049', floorPitch: 0.9,
+      wallLow: '#5C4033', wallHigh: '#241A22', trim: '#3E2C24', dadoY: 6.2,
+      wood: '#A9764E', woodDark: '#5E4030',
+      seatA: '#7C4A55', seatB: '#A76B72',
+      key: { color: '#FFE7BE', intensity: 1.15, position: [-9, 13, -7] },
+      ambient: { color: '#8A7488', intensity: 0.9 },
+      sky: '#241B2E',
+      hearth: { name: 'reading lamp', tiers: ['#2E7D5B', '#3F9A71', '#8FD9A8', '#CFF3DD', '#F6FFF9'], light: '#9BE8BC', reach: 10 },
+    },
   },
   classroom: {
     id: 'classroom',
@@ -106,6 +160,18 @@ export const ROOMS: Record<RoomId, RoomDef> = {
       face: 'focal',
       focal: { x: 0, z: -6 },
     },
+    ambience: 'birds',
+    snacks: ['onigiri', 'sandwich', 'melonpan', 'lemonade', 'friedchicken'],
+    theme: {
+      floorA: '#B9A183', floorB: '#C4AC8E', floorPitch: 1.1,
+      wallLow: '#CFE0D8', wallHigh: '#7E9AA0', trim: '#8A9E96', dadoY: 5.4,
+      wood: '#C9A56B', woodDark: '#6E5A44',
+      seatA: '#4E7FA8', seatB: '#79A9CC',
+      key: { color: '#FFD9A0', intensity: 1.0, position: [-8, 12, -6] },
+      ambient: { color: '#8E90B4', intensity: 0.78 },
+      sky: '#F2C98A',
+      hearth: { name: 'chalkboard sun', tiers: ['#E8A34A', '#F2BC6A', '#FFE9A8', '#FFF4D2', '#FFFCEE'], light: '#FFD98A', reach: 9.5 },
+    },
   },
   conference: {
     id: 'conference',
@@ -113,7 +179,19 @@ export const ROOMS: Record<RoomId, RoomDef> = {
     blurb: 'the long table, the good chairs, and nobody booking over you',
     icon: '📊',
     price: 260,
+    ambience: 'cafe',
+    snacks: ['cocoa', 'croissant', 'macaron', 'lemonade', 'sandwich', 'milkbread'],
     plan: { kind: 'table', axis: 'x', pitch: PITCH, offset: SEAT_OFFSET, face: 'across' },
+    theme: {
+      floorA: '#5A5F76', floorB: '#646A82', floorPitch: 1.6,
+      wallLow: '#D8DCE6', wallHigh: '#2E3242', trim: '#9AA0B4', dadoY: 5.0,
+      wood: '#5E4636', woodDark: '#3A2C24',
+      seatA: '#2E3448', seatB: '#4A5470',
+      key: { color: '#DCE6FF', intensity: 0.95, position: [-9, 13, -8] },
+      ambient: { color: '#6E7694', intensity: 0.76 },
+      sky: '#2B3050',
+      hearth: { name: 'projector', tiers: ['#5FA8E8', '#7FC0F2', '#A8DAFA', '#D2EEFF', '#F2FBFF'], light: '#8FC8F5', reach: 10 },
+    },
   },
   museum: {
     id: 'museum',
@@ -128,6 +206,18 @@ export const ROOMS: Record<RoomId, RoomDef> = {
       offset: SEAT_OFFSET,
       face: 'focal',
       focal: { x: 0, z: -5 },
+    },
+    ambience: 'room',
+    snacks: ['macaron', 'cocoa', 'strawberry', 'croissant', 'milkbread'],
+    theme: {
+      floorA: '#B9B2C6', floorB: '#CFC8D8', floorPitch: 2.2,
+      wallLow: '#E4E0EC', wallHigh: '#3A3C5C', trim: '#9E96B4', dadoY: 7.0,
+      wood: '#8E86A0', woodDark: '#5A5470',
+      seatA: '#5A6096', seatB: '#868CC0',
+      key: { color: '#CBD6FF', intensity: 0.92, position: [-8, 15, -8] },
+      ambient: { color: '#5C6488', intensity: 0.7 },
+      sky: '#1A1E30',
+      hearth: { name: 'exhibit', tiers: ['#5FC7E8', '#7FD9F2', '#A8E9FA', '#D2F5FF', '#F2FDFF'], light: '#8FDDF5', reach: 10.5 },
     },
   },
 };
@@ -182,4 +272,59 @@ export function roomSize(halfX: number, halfZ: number): RoomSize {
     // width/depth rather than a half-extent.
     walkable: { w: (fx + 1.4) * 2, d: (fz + 1.4) * 2 },
   };
+}
+
+/**
+ * The party environment's `EnvironmentDef`, themed and SIZED by the room and the roster.
+ *
+ * Unlike the solo worlds this is not a constant: the shell and the gameplay footprint both grow
+ * with the party, so the def is rebuilt whenever the roster changes. Everything downstream that
+ * reads `env.def` — the day/night pass, the ambience layer, the snack pool, the scene label, the
+ * camera's shell — becomes room-aware without knowing rooms exist.
+ */
+export function roomEnvDef(id: RoomId | string, memberCount: number, plan?: SeatLayoutLike): EnvironmentDef {
+  const def = roomDef(id);
+  const t = def.theme;
+  const layout = plan ?? seatLayout(memberCount, def.plan);
+  const size = roomSize(layout.halfX, layout.halfZ);
+
+  const everyPhase = <T,>(value: T): Record<DayPhase, T> => ({
+    dawn: value,
+    morning: value,
+    afternoon: value,
+    golden: value,
+    dusk: value,
+    night: value,
+  });
+
+  return {
+    id: 'arena',
+    label: def.label,
+    blurb: def.blurb,
+    icon: def.icon,
+    price: def.price,
+    ambience: def.ambience,
+    snacks: [...def.snacks],
+    // A party room is deliberately phase-independent. You went somewhere; the time of day you
+    // left behind is not the point, and a library at 3pm and at 3am look the same from inside.
+    sky: everyPhase(t.sky),
+    key: everyPhase({ color: t.key.color, intensity: t.key.intensity }),
+    ambient: everyPhase(t.ambient),
+    floor: size.walkable,
+    shell: {
+      kind: 'walls',
+      minX: size.shell.minX,
+      maxX: size.shell.maxX,
+      minZ: size.shell.minZ,
+      maxZ: size.shell.maxZ,
+      ceiling: size.shell.height,
+      rimHeight: 0,
+      groundHalf: ROOM_MAX_XZ + 2,
+    },
+  };
+}
+
+interface SeatLayoutLike {
+  halfX: number;
+  halfZ: number;
 }

@@ -49,7 +49,7 @@ import { dayKey, season } from './core/time';
 import { claimCompleted, countersFrom, questViews, rolloverQuests, type QuestView } from './core/quests';
 import { evaluate as evaluateAchievements } from './core/achievements';
 import { BREEDS, isAdoptable, type BreedId } from './data/breeds';
-import { VENUES, type VenueId } from './data/venues';
+import { ROOMS, type RoomId } from './data/rooms';
 import { ENVIRONMENTS, type EnvironmentId } from './data/environments';
 import { FURNITURE, allowedIn, fitsSlot, type SlotId } from './data/furniture';
 import { SNACKS } from './data/snacks';
@@ -117,9 +117,9 @@ export interface Game {
 
   /* multiplayer */
   setMode(mode: 'solo' | 'party'): void;
-  /** Where the party meets. Buying is a separate step, so a locked venue never silently costs. */
-  setVenue(id: VenueId): boolean;
-  buyVenue(id: VenueId): boolean;
+  /** Which room the party meets in. Buying is separate, so a locked room never silently costs. */
+  setRoom(id: RoomId): boolean;
+  buyRoom(id: RoomId): boolean;
   addPlayer(playerName: string, source: { catId?: string; guest?: GuestCat }): { ok: boolean; error?: string };
   removePlayer(id: string): void;
   renamePlayer(id: string, playerName: string): void;
@@ -627,28 +627,28 @@ export function createGame(): Game {
 
     /* ------------------------------------------------------- multiplayer */
 
-    buyVenue(id) {
+    buyRoom(id) {
       const s = store.getState();
-      const def = VENUES[id];
-      if (!def || s.unlocks.venues.includes(id)) return false;
+      const def = ROOMS[id];
+      if (!def || s.unlocks.rooms.includes(id)) return false;
       const economy = spend(s.economy, def.price);
       if (!economy) return false;
       store.setState((state) => ({
         economy,
-        unlocks: { ...state.unlocks, venues: [...state.unlocks.venues, id] },
+        unlocks: { ...state.unlocks, rooms: [...state.unlocks.rooms, id] },
       }));
       toast('THE PARTY MOVES', def.label, def.icon, 'reward');
       persist();
       return true;
     },
 
-    setVenue(id) {
+    setRoom(id) {
       const s = store.getState();
-      if (!s.unlocks.venues.includes(id)) return false;
-      if (s.settings.venue === id) return true;
-      store.setState((state) => ({ settings: { ...state.settings, venue: id } }));
-      // Party mode is standing in the arena right now, so the venue swap is a scene rebuild.
-      // In solo mode this only takes effect the next time you open the party.
+      if (!s.unlocks.rooms.includes(id)) return false;
+      if (s.settings.room === id) return true;
+      store.setState((state) => ({ settings: { ...state.settings, room: id } }));
+      // The party is standing in the old room right now, so this is a scene rebuild. In solo
+      // mode it only takes effect the next time you open the party.
       bus.emit('env:changed', { environment: s.settings.mode === 'party' ? 'arena' : s.settings.environment });
       persist();
       return true;

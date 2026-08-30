@@ -10,12 +10,12 @@
 import { describe, expect, it } from 'vitest';
 import { SNACKS, SNACK_ORDER, DEFAULT_SNACKS } from '../src/data/snacks';
 import { ENVIRONMENTS } from '../src/data/environments';
-import { VENUES, VENUE_ORDER } from '../src/data/venues';
+import { ROOMS, ROOM_ORDER } from '../src/data/rooms';
 
 /** Every place a snack can actually be served. */
 const POOLS: Array<{ where: string; snacks: readonly string[] }> = [
   ...Object.values(ENVIRONMENTS).map((e) => ({ where: `environment:${e.id}`, snacks: e.snacks })),
-  ...VENUE_ORDER.map((id) => ({ where: `venue:${id}`, snacks: VENUES[id].snacks })),
+  ...ROOM_ORDER.map((id) => ({ where: `room:${id}`, snacks: ROOMS[id].snacks })),
 ];
 
 describe('snack pools', () => {

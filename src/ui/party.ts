@@ -16,7 +16,7 @@ import {
   partyLabel,
 } from '../core/party';
 import { BREEDS } from '../data/breeds';
-import { VENUES, VENUE_ORDER, venueDef } from '../data/venues';
+import { ROOMS, ROOM_ORDER, roomDef } from '../data/rooms';
 import { bus } from '../core/events';
 import { outfitSize } from '../data/cosmetics';
 import type { Game } from '../store';
@@ -28,7 +28,7 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
   const party = s.party;
   const body = el('div', { class: 'panel__body' });
   const inParty = s.settings.mode === 'party';
-  const venue = venueDef(s.settings.venue);
+  const venue = roomDef(s.settings.room);
 
   /* --------------------------------------------------------------- mode */
 
@@ -52,7 +52,7 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
       el('p', {
         class: 'note',
         text: inParty
-          ? `everyone studies to the same clock, and every minute feeds the ${venue.hearthName}.`
+          ? `everyone studies to the same clock, and every minute feeds the ${venue.theme.hearth.name}.`
           : short
             // A disabled button with no explanation is a dead end. Say what is missing and what
             // to do about it, in the same breath.
@@ -68,10 +68,10 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
   // The party can meet anywhere it has unlocked. Each venue is a different scene rather than a
   // reskin, so this is the one control in the panel that changes the whole picture.
   const venueList = el('div', { class: 'scenes__list' });
-  for (const id of VENUE_ORDER) {
-    const def = VENUES[id];
-    const owned = s.unlocks.venues.includes(id);
-    const current = s.settings.venue === id;
+  for (const id of ROOM_ORDER) {
+    const def = ROOMS[id];
+    const owned = s.unlocks.rooms.includes(id);
+    const current = s.settings.room === id;
     const btn = el(
       'button',
       {
@@ -90,10 +90,10 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
     btn.addEventListener('click', () => {
       audio.blip();
       if (owned) {
-        game.setVenue(id);
+        game.setRoom(id);
         announce(`The party meets in the ${def.label.toLowerCase()}`);
-      } else if (game.buyVenue(id)) {
-        game.setVenue(id);
+      } else if (game.buyRoom(id)) {
+        game.setRoom(id);
       } else {
         bus.emit('toast', {
           title: 'NOT YET',
@@ -113,7 +113,7 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
       venueList,
       el('p', {
         class: 'note',
-        text: 'every venue seats the whole party — the room grows with you wherever you go.',
+        text: 'every room seats the whole party — it grows with you wherever you go.',
       }),
     ),
   );
@@ -125,7 +125,7 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
     const pct = Math.round(((progress.stage + progress.into) / BONFIRE_STAGES) * 100);
     body.appendChild(
       section(
-        `THE SHARED ${venue.hearthName.toUpperCase()}`,
+        `THE SHARED ${venue.theme.hearth.name.toUpperCase()}`,
         el(
           'div',
           { class: 'quest', 'data-done': progress.maxed ? 'true' : 'false' },
@@ -143,7 +143,7 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
               'aria-valuenow': String(Math.round(party.sharedMinutes)),
               'aria-valuemin': '0',
               'aria-valuemax': String(progress.goal),
-              'aria-label': `Shared ${venue.hearthName}`,
+              'aria-label': `Shared ${venue.theme.hearth.name}`,
             },
             el('div', { class: 'quest__fill', style: `width:${pct}%` }),
           ),

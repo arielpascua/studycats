@@ -14,7 +14,7 @@ import { createParty, type PartyState } from './party';
 import type { Outfit } from '../data/cosmetics';
 import { dayKey } from './time';
 
-import { DEFAULT_VENUE, type VenueId } from '../data/venues';
+import { DEFAULT_ROOM, type RoomId } from '../data/rooms';
 
 export interface CatSave {
   id: string;
@@ -57,8 +57,8 @@ export interface UnlockState {
   filters: string[];
   /** Cosmetics bought and available to every cat. */
   cosmetics: string[];
-  /** Party venues bought. The clearing is always in here. */
-  venues: VenueId[];
+  /** Party rooms bought. The free room is always in here. */
+  rooms: RoomId[];
   achievements: string[];
   visitors: string[];
   snacksTasted: string[];
@@ -100,8 +100,8 @@ export interface SettingsState {
   /** Solo diorama, or the shared arena. */
   mode: 'solo' | 'party';
   environment: EnvironmentId;
-  /** Where the party meets. Only read in party mode. */
-  venue: VenueId;
+  /** Which room the party meets in. Only read in party mode. */
+  room: RoomId;
   timer: TimerSettings;
 }
 
@@ -122,7 +122,7 @@ export interface GameState {
   createdOn: string;
 }
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export function createCat(breed: BreedId, name: string, id?: string, today: string = dayKey()): CatSave {
   return {
@@ -167,7 +167,7 @@ export function createDefaultState(today: string = dayKey()): GameState {
       radio: ['lofi'],
       filters: ['none'],
       cosmetics: [],
-      venues: [DEFAULT_VENUE],
+      rooms: [DEFAULT_ROOM],
       achievements: [],
       visitors: [],
       snacksTasted: [],
@@ -194,7 +194,7 @@ export function createDefaultState(today: string = dayKey()): GameState {
       showShadows: true,
       mode: 'solo',
       environment: 'room',
-      venue: DEFAULT_VENUE,
+      room: DEFAULT_ROOM,
       timer: { ...DEFAULT_TIMER_SETTINGS },
     },
     quests: { day: today, quests: [] },
