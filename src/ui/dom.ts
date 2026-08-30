@@ -49,9 +49,13 @@ export interface DisclosureOptions {
    *  what is inside. A disclosure that hides its own contents without saying how many there
    *  are just makes the user open everything to find out. */
   badge?: string;
-  /** Start expanded. Defaults to false — the whole point is a shop you can scan. */
+  /** Start expanded. Defaults to false — the whole point is a panel you can scan. */
   open?: boolean;
   onToggle?(open: boolean): void;
+  /** Heading level, so a disclosure nested inside another does not claim to be its sibling. */
+  level?: 'h3' | 'h4';
+  /** Extra class on the wrapper, for nested/tighter variants. */
+  variant?: string;
 }
 
 let disclosureSeq = 0;
@@ -72,6 +76,7 @@ export function collapsibleSection(
 ): HTMLElement {
   const id = `disclosure-${++disclosureSeq}`;
   const open = options.open === true;
+  const level = options.level ?? 'h3';
 
   const content = el('div', { class: 'section__content', id }, ...children);
   content.hidden = !open;
@@ -98,8 +103,8 @@ export function collapsibleSection(
 
   return el(
     'div',
-    { class: 'section section--collapsible' },
-    el('h3', { class: 'section__heading' }, toggle),
+    { class: `section section--collapsible${options.variant ? ` ${options.variant}` : ''}` },
+    el(level, { class: 'section__heading' }, toggle),
     content,
   );
 }

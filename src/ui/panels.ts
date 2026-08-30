@@ -16,7 +16,7 @@ import { buildPartyPanel } from './party';
 import { COSMETIC_SLOTS, SLOT_LABEL as COSMETIC_SLOT_LABEL, cosmeticsInSlot } from '../data/cosmetics';
 import { buildShopPanel } from './shop';
 import { buildStatsPanel } from './stats';
-import { announce, card, clear, el, emptyState, field, qs, qsa, section, slider, toggle } from './dom';
+import { announce, card, clear, collapsibleSection, el, emptyState, field, qs, qsa, section, slider, toggle } from './dom';
 import { bus } from '../core/events';
 
 export interface PanelHost {
@@ -174,18 +174,27 @@ export function mountPanels(container: HTMLElement, deps: PanelDeps): PanelHost 
 
 /* ------------------------------------------------------------------- cats */
 
+/**
+ * Which parts of the cats panel are open, remembered across rerenders.
+ *
+ * Renaming a cat or equipping a hat rebuilds the whole panel, so without this every wardrobe
+ * change would slam the cat you were dressing shut again. Keyed by cat id, not by index, so
+ * sending one home does not reshuffle everyone else's state.
+ */
+const catsOpen = new Map<string, boolean>();
+
 function buildCatsPanel(game: Game, rerender: () => void): HTMLElement {
   const s = game.getState();
   const body = el('div', { class: 'panel__body' });
 
   const quests = game.quests();
-  const questSection = section('TODAY');
+  const questRows: Array<Node | null> = [];
   if (quests.length === 0) {
-    questSection.appendChild(emptyState('📋', 'NO QUESTS YET', 'three show up each morning. come back tomorrow.'));
+    questRows.push(emptyState('📋', 'NO QUESTS YET', 'three show up each morning. come back tomorrow.'));
   } else {
     for (const q of quests) {
       const pct = Math.round((q.progress / q.goal) * 100);
-      questSection.appendChild(
+      questRows.push(
         el(
           'div',
           { class: 'quest', 'data-done': q.complete ? 'true' : 'false' },
@@ -218,11 +227,25 @@ function buildCatsPanel(game: Game, rerender: () => void): HTMLElement {
       game.claimQuests();
       rerender();
     });
-    questSection.appendChild(claimBtn);
+    questRows.push(claimBtn);
   }
-  body.appendChild(questSection);
 
-  const catSection = section('IN THE ROOM');
+  const unclaimed = quests.filter((q) => q.complete && !q.claimed).length;
+  body.appendChild(
+    collapsibleSection(
+      'TODAY',
+      {
+        // A collapsed quest list still has to shout when there is a reward waiting, or folding
+        // it away would quietly cost you coins.
+        badge: unclaimed > 0 ? `${unclaimed} ready` : String(quests.length),
+        open: catsOpen.get('TODAY') !== false,
+        onToggle: (open) => catsOpen.set('TODAY', open),
+      },
+      ...questRows,
+    ),
+  );
+
+  const catRows: Array<Node | null> = [];
   for (const cat of s.cats) {
     const breed = BREEDS[cat.breed];
     const bond = bondProgress(cat.bondXp);
@@ -307,26 +330,50 @@ function buildCatsPanel(game: Game, rerender: () => void): HTMLElement {
       );
     }
 
-    catSection.appendChild(
-      el(
-        'div',
-        { class: 'quest' },
+    // Every cat is its own disclosure. A cat card is a name field, ten bond pips, four wardrobe
+    // dropdowns and a tricks line; six cats of that is a panel you scroll rather than read.
+    // Collapsed, the section becomes a roster you can actually scan.
+    catRows.push(
+      collapsibleSection(
+        cat.name,
+        {
+          level: 'h4',
+          variant: 'section--nested',
+          badge: `${breed.name} · ♥${bond.level}`,
+          open: catsOpen.get(`cat:${cat.id}`) === true,
+          onToggle: (open) => catsOpen.set(`cat:${cat.id}`, open),
+        },
         el(
           'div',
-          { class: 'quest__row' },
-          el('span', { class: 'card__name', text: `${breed.name}` }),
-          el('span', { class: 'quest__reward', text: `${cat.petCount} pets · ${cat.snacksEaten} snacks` }),
+          { class: 'quest' },
+          el(
+            'div',
+            { class: 'quest__row' },
+            el('span', { class: 'card__name', text: `${breed.name}` }),
+            el('span', { class: 'quest__reward', text: `${cat.petCount} pets · ${cat.snacksEaten} snacks` }),
+          ),
+          pips,
+          el('div', { class: 'field__row' }, nameInput, sendHome),
+          wardrobe,
+          cat.tricks.length > 0
+            ? el('p', { class: 'note', text: `knows: ${cat.tricks.map((t) => t.replace('trick-', '')).join(', ')} — double-click to ask` })
+            : el('p', { class: 'note', text: 'pet them to build a bond; tricks come at level 3' }),
         ),
-        pips,
-        el('div', { class: 'field__row' }, nameInput, sendHome),
-        wardrobe,
-        cat.tricks.length > 0
-          ? el('p', { class: 'note', text: `knows: ${cat.tricks.map((t) => t.replace('trick-', '')).join(', ')} — double-click to ask` })
-          : el('p', { class: 'note', text: 'pet them to build a bond; tricks come at level 3' }),
       ),
     );
   }
-  body.appendChild(catSection);
+
+  body.appendChild(
+    collapsibleSection(
+      'IN THE ROOM',
+      {
+        badge: String(s.cats.length),
+        open: catsOpen.get('IN THE ROOM') !== false,
+        onToggle: (open) => catsOpen.set('IN THE ROOM', open),
+      },
+      ...catRows,
+    ),
+  );
 
   body.appendChild(
     el('p', { class: 'note', text: 'click a cat to pet · drag to move them · double-click for a trick' }),

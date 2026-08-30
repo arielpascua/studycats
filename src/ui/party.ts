@@ -12,6 +12,7 @@ import {
   MAX_PLAYER_NAME,
   MIN_PARTY,
   bonfireProgress,
+  hostMember,
   partyLabel,
 } from '../core/party';
 import { BREEDS } from '../data/breeds';
@@ -216,19 +217,34 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
 
   /* ---------------------------------------------------------- add local */
 
-  const seated = new Set(party.members.map((m) => m.catId).filter(Boolean));
-  const availableCats = s.cats.filter((c) => !seated.has(c.id));
+  const host = hostMember(party);
+  const availableCats = s.cats;
   const full = party.members.length >= MAX_PARTY;
 
-  const addSection = section('ADD A PLAYER');
-  if (full) {
+  // You bring ONE cat. The panel says so by simply not offering the control again once your
+  // seat is taken — a disabled button you can never enable is worse than no button.
+  const addSection = section('YOUR CAT');
+  if (host) {
+    const hostCat = host.catId ? s.cats.find((c) => c.id === host.catId) : undefined;
     addSection.appendChild(
-      emptyState('🔥', 'THE CIRCLE IS FULL', `${MAX_PARTY} cushions, ${MAX_PARTY} cats. someone has to head home first.`),
+      el('p', {
+        class: 'note',
+        text: `${hostCat ? hostCat.name : 'your cat'} is representing you. one cat each — everyone else joins with a code.`,
+      }),
+    );
+    const swap = el('button', { type: 'button', class: 'btn btn--ghost' }, 'BRING A DIFFERENT CAT');
+    swap.addEventListener('click', () => {
+      audio.blip();
+      game.removePlayer(host.id);
+      rerender();
+    });
+    addSection.appendChild(swap);
+  } else if (full) {
+    addSection.appendChild(
+      emptyState('🎟', 'THE PARTY IS FULL', `${MAX_PARTY} seats, ${MAX_PARTY} cats. someone has to head home first.`),
     );
   } else if (availableCats.length === 0) {
-    addSection.appendChild(
-      emptyState('🐈', 'EVERY CAT IS SEATED', 'adopt another cat, or bring a friend’s in with a card below.'),
-    );
+    addSection.appendChild(emptyState('🐈', 'NO CATS YET', 'adopt a cat first — you bring exactly one.'));
   } else {
     const nameInput = el('input', {
       type: 'text',
@@ -241,7 +257,7 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
       catSelect.appendChild(el('option', { value: cat.id, text: `${cat.name} · ${BREEDS[cat.breed].name}` }));
     }
     const error = el('p', { class: 'error', hidden: true, role: 'alert' });
-    const addBtn = el('button', { type: 'button', class: 'btn btn--primary' }, 'TAKE A CUSHION');
+    const addBtn = el('button', { type: 'button', class: 'btn btn--primary' }, 'TAKE YOUR SEAT');
     addBtn.addEventListener('click', () => {
       const result = game.addPlayer(nameInput.value, { catId: catSelect.value });
       if (result.ok) {

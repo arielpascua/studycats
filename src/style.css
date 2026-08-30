@@ -701,6 +701,28 @@ body {
   padding-top: var(--s2);
 }
 
+/* A disclosure inside a disclosure — one cat inside the roster. Indented and quieter, so the
+   nesting is legible without a second border fighting the card borders inside it. */
+.section--nested {
+  border-left: 2px solid var(--lav);
+  padding-left: var(--s3);
+}
+
+.section--nested .section__title {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  text-transform: none;
+}
+
+.section--nested .section__badge {
+  background: var(--lav);
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .section__chevron {
     transition: none;

@@ -12,6 +12,7 @@ import {
   bonfireReward,
   createParty,
   decodeCatCard,
+  hostMember,
   encodeCatCard,
   isReady,
   normalizeParty,
@@ -24,12 +25,21 @@ import {
   type PartyState,
 } from '../src/core/party';
 
+const guestNamed = (name: string): GuestCat => ({ name, breed: 'snow', outfit: {}, bond: 3 });
+
+/**
+ * A party of the shape the product actually allows: the first entry is this device's player
+ * with one of their own cats, and everyone after them is a guest who joined.
+ */
 function withMembers(names: Array<[string, string]>): PartyState {
   let party = createParty();
-  for (const [player, catId] of names) {
-    const result = addMember(party, { playerName: player, catId });
+  names.forEach(([player, catId], i) => {
+    const result = addMember(
+      party,
+      i === 0 ? { playerName: player, catId } : { playerName: player, guest: guestNamed(catId) },
+    );
     if (result.ok) party = result.party;
-  }
+  });
   return party;
 }
 
@@ -64,7 +74,7 @@ describe('the roster', () => {
     if (first.ok) party = first.party;
     expect(isReady(party)).toBe(false);
 
-    const second = addMember(party, { playerName: 'Bo', catId: 'cat-2' });
+    const second = addMember(party, { playerName: 'Bo', guest: guestNamed('Yuki') });
     if (second.ok) party = second.party;
     expect(isReady(party)).toBe(true);
     expect(party.members).toHaveLength(MIN_PARTY);
@@ -81,7 +91,7 @@ describe('the roster', () => {
     const party = withMembers([['Alice', 'cat-1']]);
     const dup = addMember(party, { playerName: 'Bo', catId: 'cat-1' });
     expect(dup.ok).toBe(false);
-    if (!dup.ok) expect(dup.reason).toMatch(/already in the arena/i);
+    if (!dup.ok) expect(dup.reason).toMatch(/already in the party/i);
   });
 
   it('requires a name and a cat, and says which is missing', () => {
@@ -98,11 +108,14 @@ describe('the roster', () => {
   it('caps the party and says so', () => {
     let party = createParty();
     for (let i = 0; i < MAX_PARTY; i++) {
-      const r = addMember(party, { playerName: `P${i}`, catId: `cat-${i}` });
+      const r = addMember(
+        party,
+        i === 0 ? { playerName: `P${i}`, catId: 'cat-0' } : { playerName: `P${i}`, guest: guestNamed(`g${i}`) },
+      );
       if (r.ok) party = r.party;
     }
     expect(party.members).toHaveLength(MAX_PARTY);
-    const overflow = addMember(party, { playerName: 'One More', catId: 'cat-x' });
+    const overflow = addMember(party, { playerName: 'One More', guest: guestNamed('Late') });
     expect(overflow.ok).toBe(false);
     if (!overflow.ok) expect(overflow.reason).toMatch(new RegExp(String(MAX_PARTY)));
   });
@@ -338,5 +351,58 @@ describe('a stored roster is never trusted', () => {
       expect(party.members).toEqual([]);
       expect(party.sharedMinutes).toBe(0);
     }
+  });
+});
+
+describe('one cat per device', () => {
+  it('lets you seat exactly one of your own cats', () => {
+    let party = createParty();
+    const first = addMember(party, { playerName: 'Alice', catId: 'cat-mochi' });
+    expect(first.ok).toBe(true);
+    party = (first as { ok: true; party: PartyState }).party;
+
+    const second = addMember(party, { playerName: 'Bob', catId: 'cat-shadow' });
+    expect(second.ok).toBe(false);
+    expect((second as { ok: false; reason: string }).reason).toMatch(/one cat/i);
+  });
+
+  it('still lets everyone else join as guests', () => {
+    let party = createParty();
+    party = (addMember(party, { playerName: 'Alice', catId: 'cat-mochi' }) as { ok: true; party: PartyState }).party;
+    for (const name of ['Bo', 'Cy', 'Di']) {
+      const guest = guestNamed(`${name}cat`);
+      const res = addMember(party, { playerName: name, guest });
+      expect(res.ok, `${name} should be able to join`).toBe(true);
+      party = (res as { ok: true; party: PartyState }).party;
+    }
+    expect(party.members).toHaveLength(4);
+    expect(party.members.filter((m) => m.catId !== null)).toHaveLength(1);
+  });
+
+  it('frees the slot again once your cat goes home', () => {
+    let party = createParty();
+    party = (addMember(party, { playerName: 'Alice', catId: 'cat-mochi' }) as { ok: true; party: PartyState }).party;
+    expect(hostMember(party)?.playerName).toBe('Alice');
+
+    party = removeMember(party, party.members[0].id);
+    expect(hostMember(party)).toBeNull();
+    expect(addMember(party, { playerName: 'Alice', catId: 'cat-shadow' }).ok).toBe(true);
+  });
+});
+
+describe('normalizeParty enforces one cat per device', () => {
+  it('keeps the first local cat and drops later ones', () => {
+    const party = normalizeParty(
+      {
+        members: [
+          { id: 'a', playerName: 'Alice', catId: 'cat-1', guest: null },
+          { id: 'b', playerName: 'Bo', catId: 'cat-2', guest: null },
+          { id: 'c', playerName: 'Cy', catId: null, guest: guestNamed('Yuki') },
+        ],
+      },
+      ['cat-1', 'cat-2'],
+    );
+    expect(party.members.map((m) => m.playerName)).toEqual(['Alice', 'Cy']);
+    expect(party.members.filter((m) => m.catId !== null)).toHaveLength(1);
   });
 });

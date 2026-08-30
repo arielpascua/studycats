@@ -75,7 +75,7 @@ export function addMember(
   member: { playerName: string; catId?: string | null; guest?: GuestCat | null; id?: string },
 ): AddResult {
   if (party.members.length >= MAX_PARTY) {
-    return { ok: false, reason: `the clearing seats ${MAX_PARTY} — send someone home first` };
+    return { ok: false, reason: `a party seats ${MAX_PARTY} — send someone home first` };
   }
   const playerName = sanitizePlayerName(member.playerName);
   if (!playerName) return { ok: false, reason: 'give this player a name first' };
@@ -90,7 +90,14 @@ export function addMember(
 
   // One cat cannot be in two places. Guests are exempt: they are copies, not the cat itself.
   if (catId && party.members.some((m) => m.catId === catId)) {
-    return { ok: false, reason: 'that cat is already in the arena — everyone brings one' };
+    return { ok: false, reason: 'that cat is already in the party — everyone brings one' };
+  }
+
+  // ONE CAT PER DEVICE. A party is other people, not your own collection lined up on cushions:
+  // you bring exactly one of your cats and everybody else arrives as a guest. Enforced here
+  // rather than in the panel so it holds for imported saves and any future entry point too.
+  if (catId && party.members.some((m) => m.catId !== null)) {
+    return { ok: false, reason: 'you bring one cat — the rest of the party joins with a code' };
   }
 
   const id = member.id ?? `p${party.members.length}-${playerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
@@ -98,6 +105,11 @@ export function addMember(
     ok: true,
     party: { ...party, members: [...party.members, { id, playerName, catId, guest }] },
   };
+}
+
+/** The member representing this device's player, if they have taken their seat yet. */
+export function hostMember(party: PartyState): PartyMember | null {
+  return party.members.find((m) => m.catId !== null) ?? null;
 }
 
 export function removeMember(party: PartyState, id: string): PartyState {
@@ -321,7 +333,12 @@ export function normalizeParty(input: unknown, knownCatIds: readonly string[]): 
           }
         : null;
 
-    const catId = typeof m.catId === 'string' && known.has(m.catId) && !seenCats.has(m.catId) ? m.catId : null;
+    // One cat per device, same rule addMember enforces. A save edited by hand (or written by an
+    // older build, which allowed a whole shelf of your own cats) must come back obeying it, so
+    // the rule lives on both the way in and the way through.
+    const claimsLocal =
+      typeof m.catId === 'string' && known.has(m.catId) && !seenCats.has(m.catId) && seenCats.size === 0;
+    const catId = claimsLocal ? (m.catId as string) : null;
     if (!catId && !guest) continue;
     if (catId) seenCats.add(catId);
 
