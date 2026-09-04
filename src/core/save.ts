@@ -25,7 +25,7 @@ import { isSnackId } from '../data/snacks';
 import { isFurnitureId, SLOTS, type SlotId } from '../data/furniture';
 import { isCosmeticId, sanitizeOutfit } from '../data/cosmetics';
 import { DEFAULT_ROOM, isRoomId, type RoomId } from '../data/rooms';
-import { MIN_PARTY, normalizeParty } from './party';
+import { isReady, normalizeParty } from './party';
 import { sanitizeSettings } from './timer';
 import { dayKey } from './time';
 
@@ -387,7 +387,7 @@ export function normalize(input: unknown, today: string = dayKey()): GameState {
       // minimum for honest reasons — the one-cat-per-device rule dropped members written by an
       // older build, or the file was edited — and without this you load into the venue alone,
       // with a shared timer and a bonfire and nobody to share them with.
-      mode: rawSettings.mode === 'party' && party.members.length >= MIN_PARTY ? 'party' : 'solo',
+      mode: rawSettings.mode === 'party' && isReady(party) ? 'party' : 'solo',
       environment,
       // Same rule as the solo environment: you cannot be standing in a room you do not own.
       room: isRoomId(rawSettings.room) && rooms.includes(rawSettings.room) ? rawSettings.room : DEFAULT_ROOM,

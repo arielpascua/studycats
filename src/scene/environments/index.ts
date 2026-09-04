@@ -199,7 +199,7 @@ function buildDesk(batch: BoxBatch): void {
 
 /* ------------------------------------------------------------------ worlds */
 
-function buildRoom(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[]; windowProp: Window } {
+function buildRoom(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[]; windowProp: Window; lamps: THREE.PointLight[] } {
   const batch = new BoxBatch();
   // No reference to def.floor here any more: the room's geometry is the SHELL, and def.floor is
   // now purely the gameplay footprint the cats stay inside.
@@ -255,7 +255,83 @@ function buildRoom(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obst
   );
 
   buildDesk(batch);
+
+  /* ---------------------------------------------------------- cosiness */
+  //
+  // The room shipped as a desk, a plant and a shelf against forty square metres of bare
+  // lavender. That is a diorama of a room, not a room. Everything below is BUILT-IN décor —
+  // none of it overlaps a purchasable furniture slot (SLOT_ANCHORS: two wall spots on the far
+  // wall, three floor spots, the corner, the desk, the window), so the shop still has things to
+  // sell into an already-cosy space rather than being the only source of cosiness.
+
+  // A desk lamp at the free end of the desk. The warm point light it carries is the single
+  // biggest change in the room at night: without it the scene is lit only by a cold key and
+  // the laptop's screen.
+  const lampX = -0.62;
+  const lampZ = -1.9;
+  batch.addMany(
+    [
+      { w: 0.3, h: 0.06, d: 0.3, x: lampX, y: 1.1, z: lampZ },
+      { w: 0.06, h: 0.6, d: 0.06, x: lampX, y: 1.43, z: lampZ },
+    ],
+    hex(PALETTE.ink),
+  );
+
+  // Curtains either side of the window, tied back so the view stays.
+  const winZ = shell.minZ + 0.36;
+  for (const cx of [0.55, 3.45]) {
+    batch.add({ w: 0.38, h: 1.9, d: 0.16, x: cx, y: 1.8, z: winZ }, hex(PALETTE.pinkDeep));
+    batch.add({ w: 0.44, h: 0.12, d: 0.2, x: cx, y: 1.55, z: winZ }, hex(PALETTE.butter));
+    batch.add({ w: 0.44, h: 0.1, d: 0.2, x: cx, y: 2.72, z: winZ }, hex(PALETTE.paper));
+  }
+
+  // A cat bed by the side wall: a soft base with a raised rim. Cats that wander to it look like
+  // they meant to; cats that do not still leave the room looking lived in.
+  const bedX = -4.5;
+  const bedZ = 3.6;
+  batch.add({ w: 1.0, h: 0.12, d: 1.0, x: bedX, y: 0.06, z: bedZ }, hex(PALETTE.pinkDeep));
+  batch.add({ w: 0.8, h: 0.06, d: 0.8, x: bedX, y: 0.14, z: bedZ }, hex(PALETTE.rug));
+  batch.addMany(
+    [
+      { w: 1.0, h: 0.26, d: 0.16, x: bedX, y: 0.13, z: bedZ - 0.42 },
+      { w: 1.0, h: 0.26, d: 0.16, x: bedX, y: 0.13, z: bedZ + 0.42 },
+      { w: 0.16, h: 0.26, d: 0.7, x: bedX - 0.42, y: 0.13, z: bedZ },
+    ],
+    hex(PALETTE.pinkDeep),
+  );
+
+  // A wall clock and a small framed picture on the side wall, which had nothing on it at all.
+  const sideX = shell.minX + 0.36;
+  batch.add({ w: 0.12, h: 0.66, d: 0.66, x: sideX, y: 2.55, z: 1.1 }, hex(PALETTE.paper));
+  batch.add({ w: 0.14, h: 0.22, d: 0.06, x: sideX + 0.02, y: 2.64, z: 1.1 }, hex(PALETTE.ink));
+  batch.add({ w: 0.14, h: 0.06, d: 0.18, x: sideX + 0.02, y: 2.55, z: 1.17 }, hex(PALETTE.ink));
+  batch.add({ w: 0.12, h: 0.9, d: 0.72, x: sideX, y: 1.95, z: 3.2 }, hex(PALETTE.mint));
+  batch.add({ w: 0.08, h: 0.66, d: 0.5, x: sideX + 0.04, y: 1.95, z: 3.2 }, hex(PALETTE.butter));
+  batch.add({ w: 0.06, h: 0.18, d: 0.18, x: sideX + 0.06, y: 2.05, z: 3.1 }, hex(PALETTE.peach));
+
+  // A stack of books on the floor, the way books actually end up.
+  batch.addMany(
+    [
+      { w: 0.5, h: 0.09, d: 0.36, x: -4.75, y: 0.045, z: -0.4 },
+      { w: 0.44, h: 0.09, d: 0.32, x: -4.72, y: 0.135, z: -0.36, ry: 0.15 },
+      { w: 0.46, h: 0.08, d: 0.34, x: -4.78, y: 0.22, z: -0.42, ry: -0.1 },
+    ],
+    hex(PALETTE.lavDeep),
+  );
+
   const statics = batch.build('room');
+
+  // The lampshade is unlit so it reads as the thing that is glowing, not a thing being lit.
+  const shade = new THREE.Mesh(boxGeo(0.46, 0.24, 0.46), flat(hex(PALETTE.peach)));
+  shade.position.set(lampX, 1.8, lampZ);
+  shade.castShadow = false;
+  statics.add(shade);
+
+  const lampLight = new THREE.PointLight(hex('#FFC98A'), 1.7, 6.5, 2);
+  lampLight.position.set(lampX, 1.72, lampZ);
+  // Not a shadow caster: a point-light shadow is six extra scene renders, for a table lamp.
+  lampLight.castShadow = false;
+  statics.add(lampLight);
 
   const windowProp = createWindow('plain');
   windowProp.group.position.set(2.0, 0, shell.minZ + 0.26);
@@ -271,8 +347,11 @@ function buildRoom(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obst
       { x: 0.4, z: -1.5, r: 1.5 }, // desk
       { x: 0.4, z: 0.15, r: 0.7 }, // chair
       { x: -4.2, z: -2.2, r: 0.5 }, // plant
+      { x: bedX, z: bedZ, r: 0.6 }, // cat bed
+      { x: -4.75, z: -0.4, r: 0.35 }, // books
     ],
     windowProp,
+    lamps: [lampLight],
   };
 }
 
@@ -561,6 +640,7 @@ export function buildEnvironment(id: EnvironmentId, options: BuildOptions = {}):
       group.add(built.statics);
       obstacles = built.obstacles;
       windowProp = built.windowProp;
+      accents.push(...built.lamps);
       break;
     }
   }

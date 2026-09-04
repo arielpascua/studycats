@@ -125,8 +125,16 @@ export function renameMember(party: PartyState, id: string, playerName: string):
   };
 }
 
+/**
+ * A party can start when there are enough people AND one of them is you.
+ *
+ * The second clause is the one that was missing. "You bring one cat" was enforced as "at most
+ * one", so a roster of five guests with no host passed as ready and the panel said "everyone is
+ * here" over a room that did not contain the player's own cat. A party you are not in is not
+ * your party.
+ */
 export function isReady(party: PartyState): boolean {
-  return party.members.length >= MIN_PARTY;
+  return party.members.length >= MIN_PARTY && hostMember(party) !== null;
 }
 
 /* ------------------------------------------------------------------- arena */

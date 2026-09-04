@@ -13,6 +13,7 @@ import {
   MIN_PARTY,
   bonfireProgress,
   hostMember,
+  isReady,
   partyLabel,
 } from '../core/party';
 import { BREEDS } from '../data/breeds';
@@ -37,7 +38,7 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
     { type: 'button', class: 'btn btn--primary' },
     inParty ? 'BACK TO YOUR ROOM' : `GO TO THE ${venue.label}`,
   );
-  const short = !inParty && party.members.length < MIN_PARTY;
+  const short = !inParty && !isReady(party);
   modeBtn.disabled = short;
   modeBtn.addEventListener('click', () => {
     audio.blip();
@@ -55,8 +56,11 @@ export function buildPartyPanel(game: Game, rerender: () => void): HTMLElement {
           ? `everyone studies to the same clock, and every minute feeds the ${venue.theme.hearth.name}.`
           : short
             // A disabled button with no explanation is a dead end. Say what is missing and what
-            // to do about it, in the same breath.
-            ? `${venue.blurb}. a party is other people — you bring one cat, and you need at least ${MIN_PARTY - party.members.length} more ${party.members.length === MIN_PARTY - 1 ? 'person' : 'people'} before you can go.`
+            // to do about it, in the same breath — and the two things that can be missing are
+            // different sentences.
+            ? hostMember(party) === null
+              ? `${venue.blurb}. take your seat first — a party you are not in is not your party.`
+              : `${venue.blurb}. a party is other people — you need at least ${MIN_PARTY - party.members.length} more ${party.members.length === MIN_PARTY - 1 ? 'person' : 'people'} before you can go.`
             : `${venue.blurb}. everyone is here — head over whenever you like.`,
       }),
       modeBtn,

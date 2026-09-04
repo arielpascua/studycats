@@ -406,3 +406,22 @@ describe('normalizeParty enforces one cat per device', () => {
     expect(party.members.filter((m) => m.catId !== null)).toHaveLength(1);
   });
 });
+
+describe('a party you are not in is not your party', () => {
+  it('is not ready with enough guests but no host', () => {
+    let party = createParty();
+    for (const n of ['Bo', 'Cy', 'Di']) {
+      party = (addMember(party, { playerName: n, guest: guestNamed(`${n}cat`) }) as { ok: true; party: PartyState }).party;
+    }
+    expect(party.members).toHaveLength(3);
+    expect(isReady(party)).toBe(false);
+  });
+
+  it('becomes ready the moment the host takes a seat', () => {
+    let party = createParty();
+    party = (addMember(party, { playerName: 'Bo', guest: guestNamed('Yuki') }) as { ok: true; party: PartyState }).party;
+    expect(isReady(party)).toBe(false);
+    party = (addMember(party, { playerName: 'Alice', catId: 'cat-1' }) as { ok: true; party: PartyState }).party;
+    expect(isReady(party)).toBe(true);
+  });
+});

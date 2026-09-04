@@ -24,6 +24,13 @@ export interface Hud {
 
 const TITLE = 'Study With Cats';
 
+const MODE_GLYPH: Record<string, string> = {
+  idle: '🐾',
+  focus: '📚',
+  shortBreak: '☕',
+  longBreak: '🌙',
+};
+
 export function mountHud(game: Game, onOpenPanel: (id: string) => void): Hud {
   const clock = qs('#timer-clock');
   const modeEl = qs('#timer-mode');
@@ -138,7 +145,9 @@ export function mountHud(game: Game, onOpenPanel: (id: string) => void): Hud {
       clock.textContent = text;
     }
 
-    modeEl.textContent = modeLabel(t.mode);
+    // A tiny glyph in front of the mode. It is the difference between a status field and a
+    // friend telling you what's happening: "☕ SHORT BREAK" reads as an invitation.
+    modeEl.textContent = `${MODE_GLYPH[t.mode] ?? ''} ${modeLabel(t.mode)}`.trim();
     startLabel.textContent = t.running ? 'PAUSE' : t.mode === 'idle' ? 'START' : 'RESUME';
     startBtn.setAttribute('data-mode', isBreak(t.mode) ? 'break' : 'focus');
     startBtn.setAttribute('aria-label', t.running ? 'Pause the timer' : 'Start the timer');

@@ -340,3 +340,35 @@ name — `capeCloth`, `scarfTail`, `patches` — so those names are API.
 A sphere's UVs wrap equirectangularly and `u=0.25` lands on +z, so an iris drawn at the middle of
 its texture ends up on the **side** of the eyeball, facing the cat's ear. That cost an hour during
 the modelled-eye experiment. `phiStart` of -90 degrees is the fix, if spheres ever come back.
+
+
+## 11. Cosiness, and what the shop is for
+
+The cozy room shipped as a desk, a plant and a shelf against forty square metres of bare lavender.
+That is a diorama of a room, not a room. It now has a desk lamp with a real warm point light, tied-
+back curtains, a cat bed, a wall clock, a framed picture and a stack of books on the floor.
+
+The rule that decided what to add: **built-in décor never occupies a purchasable slot.** The
+shop sells rugs, wall prints, cushions, fairy lights, mugs, plants, a cat tower and window views,
+each into a named `SLOT_ANCHORS` position. Everything built in lives elsewhere — the side wall,
+which had no slots at all, the free end of the desk, the far corner of the floor. The room is
+cosy on day one, and the shop still has somewhere to put things.
+
+The desk lamp's light is the biggest single change at night. Before it, the room was lit by a
+cold key and a laptop screen. A `PointLight` here does not cast shadows: a point-light shadow is
+six extra scene renders, for a table lamp.
+
+### Chrome
+
+- The six panel buttons each carry their own pastel (`data-panel` → pink, peach, butter, mint,
+  lavender, paper). Same shape, border and lift; only the fill changes. Labels stay `--ink-soft`,
+  which measures at or above 4.7:1 on all six.
+- The timer's mode label carries a glyph — 🐾 ready, 📚 focus, ☕ short break, 🌙 long break.
+  Silkscreen has no emoji coverage, so `.timer__mode` falls back to the colour-emoji stack.
+
+### A party you are not in is not your party
+
+`isReady()` requires the host's own cat to be seated, not just enough members. Before this, five
+guests and no host counted as ready, and the panel said "everyone is here" over a room the
+player's cat was not in. The load path applies the same rule, so a save cannot open into a party
+its owner never joined.

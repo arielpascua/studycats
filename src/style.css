@@ -335,6 +335,27 @@ body {
   background: var(--lav);
 }
 
+/* Each panel gets its own pastel, so the rail reads as a row of sweets rather than six
+   identical grey boxes. Still the same shape, border and lift — only the fill changes, and the
+   label stays --ink-soft on every one of these (all measured at or above 4.7:1). */
+.icon-btn[data-panel='cats'] { background: var(--pink); }
+.icon-btn[data-panel='party'] { background: var(--peach); }
+.icon-btn[data-panel='shop'] { background: var(--butter); }
+.icon-btn[data-panel='stats'] { background: var(--mint); }
+.icon-btn[data-panel='catalogue'] { background: var(--lav); }
+.icon-btn[data-panel='settings'] { background: var(--paper-2); }
+
+.icon-btn[data-panel][aria-expanded='true'] {
+  background: var(--paper);
+  transform: translate(2px, 2px);
+  box-shadow: var(--lift-sm);
+}
+
+/* The mode glyph is an emoji and Silkscreen has none; fall back to a colour-emoji face. */
+.timer__mode {
+  font-family: var(--font-display), var(--font-emoji);
+}
+
 .btn:hover,
 .icon-btn:hover,
 .chip:hover {
