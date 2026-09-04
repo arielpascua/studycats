@@ -117,6 +117,30 @@ function buildGround(def: EnvironmentDef, topColor: number): THREE.Group {
  * merged mesh — piers between openings, a sill and a lintel per opening — so a vista costs
  * nothing at the draw-call level. What you build behind the hole is where the calls go.
  */
+/**
+ * What a world's vista adds. The files under ./vistas/ each export one function of this shape.
+ *
+ * `batch` is the world's own BoxBatch, handed over BEFORE it is built, so vista boxes in colours
+ * the world already uses cost nothing. `group` is for what cannot merge — textured quads, unlit
+ * glow cubes, lights. `openings` are cut into the shell walls by buildEnvironment, which is why
+ * the walls are built after the world now rather than before it.
+ */
+export interface VistaContext {
+  batch: BoxBatch;
+  group: THREE.Group;
+  def: EnvironmentDef;
+}
+
+export interface VistaResult {
+  backdrops: Backdrop[];
+  nightLights: THREE.PointLight[];
+  obstacles: Obstacle[];
+  openings?: WallOpening[];
+  update?(dt: number, elapsed: number, phase: DayPhase, reducedMotion: boolean): void;
+}
+
+export type VistaHook = (ctx: VistaContext) => VistaResult;
+
 export interface WallOpening {
   wall: 'z' | 'x';
   from: number;
@@ -542,12 +566,19 @@ function buildRoom(def: EnvironmentDef): {
   };
 }
 
+/**
+ * Each solo world's vista, by id. A world with no entry simply has no far thing yet. The cozy
+ * room's is built into buildRoom itself because it also reshapes the room; these three are
+ * additive and live in ./vistas/.
+ */
+const VISTAS: Partial<Record<EnvironmentId, VistaHook>> = {};
+
 /** The garden doors' opening in the cozy room's far wall. Floor to lintel, so a cat can sit on the sill. */
 const DOOR_X0 = 0.5;
 const DOOR_X1 = 5.7;
 const DOOR_Y1 = 3.4;
 
-function buildPicnic(_def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[] } {
+function buildPicnic(def: EnvironmentDef, vista?: VistaHook): { statics: THREE.Group; obstacles: Obstacle[]; vista: VistaResult | undefined } {
   const batch = new BoxBatch();
 
   // Tufts of taller grass scattered around the edge
@@ -575,7 +606,12 @@ function buildPicnic(_def: EnvironmentDef): { statics: THREE.Group; obstacles: O
   batch.add({ w: 0.84, h: 0.1, d: 0.64, x: -2.6, y: 0.52, z: 2.2 }, C.woodDark);
 
   buildDesk(batch);
+  // The vista adds to the batch before it is built, so its boxes merge for free.
+  const vistaGroup = new THREE.Group();
+  vistaGroup.name = 'vista';
+  const vistaOut = vista?.({ batch, group: vistaGroup, def });
   const statics = batch.build('picnic');
+  statics.add(vistaGroup);
 
   // A little tree at the back
   const treeTrunk = box({ w: 0.42, h: 2.4, d: 0.42, x: 4.0, y: 1.2, z: -2.6 }, C.woodDark);
@@ -591,7 +627,9 @@ function buildPicnic(_def: EnvironmentDef): { statics: THREE.Group; obstacles: O
 
   return {
     statics,
+    vista: vistaOut,
     obstacles: [
+      ...(vistaOut?.obstacles ?? []),
       { x: 0.4, z: -1.5, r: 1.5 },
       { x: 0.4, z: 0.15, r: 0.7 },
       { x: 4.0, z: -2.6, r: 0.7 },
@@ -600,7 +638,7 @@ function buildPicnic(_def: EnvironmentDef): { statics: THREE.Group; obstacles: O
   };
 }
 
-function buildBonfire(_def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[]; fire: THREE.Group; firePoint: THREE.Vector3 } {
+function buildBonfire(def: EnvironmentDef, vista?: VistaHook): { statics: THREE.Group; obstacles: Obstacle[]; fire: THREE.Group; firePoint: THREE.Vector3; vista: VistaResult | undefined } {
   const batch = new BoxBatch();
 
   const ground: BoxSpec[] = [];
@@ -628,7 +666,12 @@ function buildBonfire(_def: EnvironmentDef): { statics: THREE.Group; obstacles: 
   );
 
   buildDesk(batch);
+  // The vista adds to the batch before it is built, so its boxes merge for free.
+  const vistaGroup = new THREE.Group();
+  vistaGroup.name = 'vista';
+  const vistaOut = vista?.({ batch, group: vistaGroup, def });
   const statics = batch.build('bonfire');
+  statics.add(vistaGroup);
 
   // The fire itself: three stacked, animated boxes with an unlit core.
   const fire = new THREE.Group();
@@ -673,7 +716,9 @@ function buildBonfire(_def: EnvironmentDef): { statics: THREE.Group; obstacles: 
     statics,
     fire,
     firePoint: new THREE.Vector3(-2.4, 0.6, 1.8),
+    vista: vistaOut,
     obstacles: [
+      ...(vistaOut?.obstacles ?? []),
       { x: 0.4, z: -1.5, r: 1.5 },
       { x: 0.4, z: 0.15, r: 0.7 },
       { x: -2.4, z: 1.8, r: 1.1 },
@@ -682,7 +727,7 @@ function buildBonfire(_def: EnvironmentDef): { statics: THREE.Group; obstacles: 
   };
 }
 
-function buildCafe(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obstacle[]; windowProp: Window; lamps: THREE.PointLight[] } {
+function buildCafe(def: EnvironmentDef, vista?: VistaHook): { statics: THREE.Group; obstacles: Obstacle[]; windowProp: Window; lamps: THREE.PointLight[]; vista: VistaResult | undefined } {
   const batch = new BoxBatch();
 
   // Chequerboard café floor
@@ -720,7 +765,12 @@ function buildCafe(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obst
   );
 
   buildDesk(batch);
+  // The vista adds to the batch before it is built, so its boxes merge for free.
+  const vistaGroup = new THREE.Group();
+  vistaGroup.name = 'vista';
+  const vistaOut = vista?.({ batch, group: vistaGroup, def });
   const statics = batch.build('cafe');
+  statics.add(vistaGroup);
 
   const windowProp = createWindow('city');
   windowProp.group.position.set(2.4, 0, shell.minZ + 0.26);
@@ -747,7 +797,9 @@ function buildCafe(def: EnvironmentDef): { statics: THREE.Group; obstacles: Obst
     statics,
     windowProp,
     lamps,
+    vista: vistaOut,
     obstacles: [
+      ...(vistaOut?.obstacles ?? []),
       { x: 0.4, z: -1.5, r: 1.5 },
       { x: 0.4, z: 0.15, r: 0.7 },
       { x: -3.6, z: -2.4, r: 1.3 },
@@ -777,22 +829,17 @@ export function buildEnvironment(id: EnvironmentId, options: BuildOptions = {}):
     id === 'picnic' ? C.grass : id === 'bonfire' ? hex(PALETTE.soil) : hex(PALETTE.wood);
   group.add(buildGround(def, groundColor));
 
-  if (def.shell.kind === 'walls') {
-    group.add(
-      buildShellWalls(
-        def,
-        hex(id === 'cafe' ? PALETTE.woodDark : PALETTE.lav),
-        hex(id === 'cafe' ? PALETTE.wood : PALETTE.lavDeep),
-        hex(id === 'cafe' ? PALETTE.paper2 : PALETTE.paper),
-        id === 'room' ? [{ wall: 'z', from: DOOR_X0, to: DOOR_X1, y0: 0, y1: DOOR_Y1 }] : [],
-      ),
-    );
-  } else {
+  if (def.shell.kind !== 'walls') {
     const rim = buildHorizonRim(def, id === 'bonfire' ? hex('#4E4374') : hex(PALETTE.leafDark));
     if (rim) group.add(rim);
   }
 
   let obstacles: Obstacle[] = [];
+  let vistaOut: VistaResult | undefined;
+  // Openings the world wants cut into its shell. The cozy room's garden doors are built into
+  // buildRoom; the other worlds' come from their vista, which is why the walls are built AFTER
+  // the switch below.
+  let openings: WallOpening[] = id === 'room' ? [{ wall: 'z', from: DOOR_X0, to: DOOR_X1, y0: 0, y1: DOOR_Y1 }] : [];
   let windowProp: Window | null = null;
   let backdrops: Backdrop[] = [];
   let nightLights: THREE.PointLight[] = [];
@@ -802,15 +849,17 @@ export function buildEnvironment(id: EnvironmentId, options: BuildOptions = {}):
 
   switch (id) {
     case 'picnic': {
-      const built = buildPicnic(def);
+      const built = buildPicnic(def, VISTAS.picnic);
       group.add(built.statics);
       obstacles = built.obstacles;
+      vistaOut = built.vista;
       break;
     }
     case 'bonfire': {
-      const built = buildBonfire(def);
+      const built = buildBonfire(def, VISTAS.bonfire);
       group.add(built.statics);
       obstacles = built.obstacles;
+      vistaOut = built.vista;
       firePoint = built.firePoint;
       fireGroup = built.fire as THREE.Group & { flames?: THREE.Mesh[] };
       const fireLight = new THREE.PointLight(hex(PALETTE.ember), 3.4, 11, 2);
@@ -825,11 +874,12 @@ export function buildEnvironment(id: EnvironmentId, options: BuildOptions = {}):
       break;
     }
     case 'cafe': {
-      const built = buildCafe(def);
+      const built = buildCafe(def, VISTAS.cafe);
       group.add(built.statics);
       obstacles = built.obstacles;
       windowProp = built.windowProp;
       accents.push(...built.lamps);
+      vistaOut = built.vista;
       break;
     }
     case 'room':
@@ -843,6 +893,24 @@ export function buildEnvironment(id: EnvironmentId, options: BuildOptions = {}):
       nightLights = built.nightLights;
       break;
     }
+  }
+
+  if (vistaOut) {
+    backdrops = [...backdrops, ...vistaOut.backdrops];
+    nightLights = [...nightLights, ...vistaOut.nightLights];
+    if (vistaOut.openings) openings = [...openings, ...vistaOut.openings];
+  }
+
+  if (def.shell.kind === 'walls') {
+    group.add(
+      buildShellWalls(
+        def,
+        hex(id === 'cafe' ? PALETTE.woodDark : PALETTE.lav),
+        hex(id === 'cafe' ? PALETTE.wood : PALETTE.lavDeep),
+        hex(id === 'cafe' ? PALETTE.paper2 : PALETTE.paper),
+        openings,
+      ),
+    );
   }
 
   const laptop = createLaptop();
@@ -884,6 +952,7 @@ export function buildEnvironment(id: EnvironmentId, options: BuildOptions = {}):
       for (const b of backdrops) b.setPhase(phase);
       const dark = phase === 'night' || phase === 'dusk';
       for (const l of nightLights) l.intensity = dark ? 1.05 : 0;
+      vistaOut?.update?.(dt, elapsed, phase, reducedMotion);
 
       if (fireGroup?.flames) {
         flicker += dt;
