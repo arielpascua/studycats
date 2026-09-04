@@ -29,7 +29,13 @@ export interface BrainContext {
    * The walkable area. `radius` makes it a CIRCLE rather than the w x d rectangle — the arena
    * is an island, and a rectangular clamp let cats stroll out over the water at the corners.
    */
-  bounds: { w: number; d: number; radius?: number };
+  /**
+   * The walkable footprint. `cx`/`cz` let it sit OFF-CENTRE: the solo rooms' far walls are at
+   * -x/-z and the rooms extend toward the viewer, so a rect centred on the origin can only be as
+   * big as the distance to the nearest far wall — which is why the cats had a strip to pace in
+   * while two-thirds of the floor went unused.
+   */
+  bounds: { w: number; d: number; cx?: number; cz?: number; radius?: number };
   obstacles: readonly Obstacle[];
   /** Present during a break; the brain asks for a target through the intents. */
   feedingActive: boolean;
@@ -349,6 +355,8 @@ export class CatBrain {
     const radius = ctx.bounds.radius;
     const halfW = Math.max(0.5, ctx.bounds.w / 2 - 1);
     const halfD = Math.max(0.5, ctx.bounds.d / 2 - 1);
+    const cx = ctx.bounds.cx ?? 0;
+    const cz = ctx.bounds.cz ?? 0;
 
     // Ten tries to find a spot outside every obstacle.
     for (let i = 0; i < 10; i++) {
@@ -371,8 +379,8 @@ export class CatBrain {
         x = Math.sin(angle) * r;
         z = Math.cos(angle) * r;
       } else {
-        x = ctx.rng.range(-halfW, halfW);
-        z = ctx.rng.range(-halfD, halfD);
+        x = cx + ctx.rng.range(-halfW, halfW);
+        z = cz + ctx.rng.range(-halfD, halfD);
       }
 
       if (radius && Math.hypot(x, z) > radius) continue;
@@ -445,8 +453,10 @@ export class CatBrain {
     } else {
       const halfW = ctx.bounds.w / 2 - 0.4;
       const halfD = ctx.bounds.d / 2 - 0.4;
-      this.x = Math.min(halfW, Math.max(-halfW, nx));
-      this.z = Math.min(halfD, Math.max(-halfD, nz));
+      const cx = ctx.bounds.cx ?? 0;
+      const cz = ctx.bounds.cz ?? 0;
+      this.x = Math.min(cx + halfW, Math.max(cx - halfW, nx));
+      this.z = Math.min(cz + halfD, Math.max(cz - halfD, nz));
     }
 
     this.pose = 'walk';

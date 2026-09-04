@@ -5,7 +5,7 @@
 
 ## Suggested prompt
 
-Goal: the othe color of cats is outside the box of the body. make the color patches of the cat more surreal
+Goal: rival these scenes. also the zoom is super close and the cat roaming area is so tight.
 
 Deterministic framing (no external model was used):
 - Suggested tier T1, model sonnet (advisory).

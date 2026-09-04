@@ -372,3 +372,50 @@ six extra scene renders, for a table lamp.
 guests and no host counted as ready, and the panel said "everyone is here" over a room the
 player's cat was not in. The load path applies the same rule, so a save cannot open into a party
 its owner never joined.
+
+
+## 12. The shot, and how far the cats go
+
+Two owner complaints, one cause: **"the zoom is super close"** and **"the cat roaming area is so
+tight."** Both were the far walls. The solo interiors' furniture is anchored to the min-x/min-z
+walls, and both the camera's shell and the cats' walkable rect were built symmetric about the
+origin — so neither could be bigger than the distance to the nearest far wall, however much room
+there was behind the viewer.
+
+### The shot
+
+`FOCUS_WIDE` is now 4.4 × 3.3 (was 3.0 × 2.3) and `FOCUS_TALL` 2.6 × 2.2 (was 2.0 × 1.7).
+Measured, not chosen: every widening of the focus box needs a proportionally bigger shell to back
+off into, and the shell grows only toward +x/+z/+y, where the eye is, so the walls you see never
+move. The sweep against `tests/framing.test.ts`:
+
+| focus half | shell (near-x, near-z, ceiling) | result |
+|---|---|---|
+| 3.0 × 2.3 | 10.0, 9.5, 9.2 (old) | passes — the close-up |
+| 3.8 × 2.9 | 10.0, 9.5, 9.2 | **crops** |
+| 3.8 × 2.9 | 12.5, 12.0, 11.0 | passes |
+| 4.4 × 3.3 | 14.0, 13.5, 12.5 | passes — **chosen** |
+| 5.0 × 3.8 | 16.0, 15.5, 14.0 | passes, but the cats get small |
+
+### The roaming rect
+
+`EnvironmentDef.floorCenter` lets the walkable rect sit off-centre. The cozy room's went from
+11 × 8 pinned to the far walls to 14.1 × 12.2 centred at (2.45, 2.9) — about 2× the area, all of
+it toward the viewer. `catBrain` bounds carry the centre; roaming, separation and drop-clamping
+use the wide rect.
+
+**Spawns, snacks and visitors deliberately do not.** They use `compactFloor()`, an 11 × 8 rect at
+the origin, because the wide rect now runs most of the way to the camera and a snack scattered
+under the lens is a snack nobody sees eaten.
+
+### Open worlds
+
+The picnic hill and bonfire have no walls; a horizon rim hides the ground's edge. The wider shot
+looked over it — 69% of the top edge was background in the bonfire — so the rims rose with the
+shot: picnic 2.6 → 6.5, bonfire 3.0 → 7.2. Measured at the default pose with the runtime probe;
+all four solo worlds read 0% edge sky.
+
+A framing test used to pin the footprint to the exact old rect, with the comment "cats wandering
+across the new floor would be a worse product." That was a deliberate call and it was wrong; the
+test now asserts the invariant that actually matters — the footprint never reaches the far walls
+and only grows toward the viewer.

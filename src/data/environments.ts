@@ -57,6 +57,13 @@ export interface EnvironmentDef {
   snacks: readonly string[];
   /** Gameplay footprint in world units — cats path inside this. NOT the visual room size. */
   floor: { w: number; d: number };
+  /**
+   * Where that footprint is centred. Optional; defaults to the origin. The interiors' far walls
+   * are at -x/-z and the rooms extend toward the viewer, so a rect centred on the origin could
+   * only ever be as wide as the distance to the nearest far wall — the cats had a strip to pace
+   * in while two-thirds of the floor went unused.
+   */
+  floorCenter?: { x: number; z: number };
   /** The room around the gameplay footprint. See ShellDef. */
   shell: ShellDef;
 }
@@ -66,12 +73,14 @@ export interface EnvironmentDef {
  * this is the only direction that has to grow — and growing it is free visually, because it is
  * all behind the eye.
  */
-const NEAR_X = 10.0;
-const NEAR_Z = 9.5;
+// The eye's room, behind and above the viewer. Grown with the focus box: a wider shot needs
+// somewhere to back off TO, and the far walls (min-x, min-z — the ones you see) never move.
+const NEAR_X = 14.0;
+const NEAR_Z = 13.5;
 // Taller than it looks: at these framings the eye never sees above about y=5, so the extra
 // height is invisible. It exists to keep the ceiling from capping the camera's standoff at high
 // elevation, which would silently crop the desk.
-const WALL_H = 9.2;
+const WALL_H = 12.5;
 /** Outdoors the only thing above you is sky, so the eye has no practical vertical limit. */
 const OPEN_SKY = 60;
 
@@ -110,7 +119,8 @@ export const ENVIRONMENTS: Record<EnvironmentId, EnvironmentDef> = {
     },
     ambience: 'room',
     snacks: ['onigiri', 'melonpan', 'marshmallow', 'sardine', 'milkbread'],
-    floor: { w: 11, d: 8 },
+    floor: { w: 14.1, d: 12.2 },
+    floorCenter: { x: 2.45, z: 2.9 },
     // Far walls unchanged at x -5.5 / z -4.0; the room simply extends behind the viewer.
     shell: { kind: 'walls', minX: -5.5, maxX: NEAR_X, minZ: -4.0, maxZ: NEAR_Z, ceiling: WALL_H, rimHeight: 0, groundHalf: 0 },
   },
@@ -147,10 +157,10 @@ export const ENVIRONMENTS: Record<EnvironmentId, EnvironmentDef> = {
     },
     ambience: 'birds',
     snacks: ['sandwich', 'strawberry', 'melonpan', 'onigiri', 'lemonade', 'friedchicken', 'meatball'],
-    floor: { w: 12, d: 9 },
+    floor: { w: 17, d: 14 },
     // Outdoors: no walls, but the ground has to reach past the frustum in every direction or
     // you can see the edge of the world at the bottom of the frame.
-    shell: { kind: 'open', minX: -22, maxX: 22, minZ: -22, maxZ: 22, ceiling: OPEN_SKY, rimHeight: 2.6, groundHalf: 46 },
+    shell: { kind: 'open', minX: -22, maxX: 22, minZ: -22, maxZ: 22, ceiling: OPEN_SKY, rimHeight: 6.5, groundHalf: 46 },
   },
 
   bonfire: {
@@ -185,8 +195,8 @@ export const ENVIRONMENTS: Record<EnvironmentId, EnvironmentDef> = {
     },
     ambience: 'fire',
     snacks: ['marshmallow', 'sardine', 'sandwich', 'cocoa', 'sweetpotato', 'yakitori', 'steak'],
-    floor: { w: 11, d: 9 },
-    shell: { kind: 'open', minX: -22, maxX: 22, minZ: -22, maxZ: 22, ceiling: OPEN_SKY, rimHeight: 3.0, groundHalf: 46 },
+    floor: { w: 16, d: 14 },
+    shell: { kind: 'open', minX: -22, maxX: 22, minZ: -22, maxZ: 22, ceiling: OPEN_SKY, rimHeight: 7.2, groundHalf: 46 },
   },
 
   cafe: {
@@ -221,7 +231,8 @@ export const ENVIRONMENTS: Record<EnvironmentId, EnvironmentDef> = {
     },
     ambience: 'cafe',
     snacks: ['croissant', 'milkbread', 'cocoa', 'strawberry', 'macaron', 'meatball'],
-    floor: { w: 12, d: 8 },
+    floor: { w: 14.6, d: 12.1 },
+    floorCenter: { x: 2.2, z: 2.95 },
     shell: { kind: 'walls', minX: -6.0, maxX: NEAR_X, minZ: -4.0, maxZ: NEAR_Z, ceiling: WALL_H, rimHeight: 0, groundHalf: 0 },
   },
 

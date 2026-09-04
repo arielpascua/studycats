@@ -152,13 +152,25 @@ describe('the desk stays in shot', () => {
 });
 
 describe('what the shell must NOT have changed', () => {
-  it('leaves the gameplay footprint exactly where it was', () => {
-    // The room got bigger; the play area deliberately did not. Cats wandering across the new
-    // floor would be a worse product, not a better one.
-    expect(ENVIRONMENTS.room.floor).toEqual({ w: 11, d: 8 });
-    expect(ENVIRONMENTS.picnic.floor).toEqual({ w: 12, d: 9 });
-    expect(ENVIRONMENTS.bonfire.floor).toEqual({ w: 11, d: 9 });
-    expect(ENVIRONMENTS.cafe.floor).toEqual({ w: 12, d: 8 });
+  it('never lets the footprint reach the far walls, and only grows it toward the viewer', () => {
+    // The footprint used to be pinned to the exact old rect. That was the wrong invariant: the
+    // rect is ALLOWED to grow — the owner said the cats' roaming area was "so tight" — as long
+    // as it grows the same way the shell does, toward +x/+z where the eye is, and never past
+    // the far walls the furniture is anchored to.
+    for (const id of ['room', 'cafe'] as const) {
+      const def = ENVIRONMENTS[id];
+      const c = def.floorCenter ?? { x: 0, z: 0 };
+      const minX = c.x - def.floor.w / 2;
+      const minZ = c.z - def.floor.d / 2;
+      const maxX = c.x + def.floor.w / 2;
+      const maxZ = c.z + def.floor.d / 2;
+      expect(minX, `${id} footprint reaches the far x wall`).toBeGreaterThan(def.shell.minX);
+      expect(minZ, `${id} footprint reaches the far z wall`).toBeGreaterThan(def.shell.minZ);
+      expect(maxX, `${id} footprint pokes out the near x wall`).toBeLessThan(def.shell.maxX);
+      expect(maxZ, `${id} footprint pokes out the near z wall`).toBeLessThan(def.shell.maxZ);
+      // And it is actually bigger than the old strip — the whole point.
+      expect(def.floor.w * def.floor.d, `${id} roaming area did not grow`).toBeGreaterThan(11 * 8 * 1.5);
+    }
   });
 
   it('keeps the far walls at their original planes, so wall-mounted furniture cannot drift', () => {

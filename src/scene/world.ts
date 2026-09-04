@@ -382,8 +382,23 @@ export function createWorld(game: Game): World {
    * visibly, and a room of cats stacked in one corner reads as a bug even though each individual
    * position is legal.
    */
+  /** The full walkable rect, with its centre. Roaming, separation and drops use this. */
+  function roamRect() {
+    const c = env.def.floorCenter ?? { x: 0, z: 0 };
+    return { ...env.def.floor, cx: c.x, cz: c.z };
+  }
+
+  /**
+   * A compact rect by the desk, centred on the origin. Spawns, snacks and visitors use THIS, not
+   * the roaming rect: the roaming rect now runs most of the way to the camera, and a snack
+   * scattered under the lens is a snack nobody sees eaten.
+   */
+  function compactFloor() {
+    return { w: Math.min(env.def.floor.w, 11), d: Math.min(env.def.floor.d, 8) };
+  }
+
   function spawnPoint(index: number): { x: number; z: number } {
-    const floor = env.def.floor;
+    const floor = compactFloor();
     const golden = 2.399963;
     const t = index * golden;
     const radius = 0.9 + Math.sqrt(index + 0.6) * 0.95;
@@ -404,7 +419,7 @@ export function createWorld(game: Game): World {
    */
   function separateCats(): void {
     const list = [...agents.values()].filter((a) => !a.held);
-    const floor = env.def.floor;
+    const floor = roamRect();
     const halfW = floor.w / 2 - 0.4;
     const halfD = floor.d / 2 - 0.4;
     for (let i = 0; i < list.length; i++) {
@@ -473,7 +488,7 @@ export function createWorld(game: Game): World {
     feeding = beginFeeding({
       unlocked: state.unlocks.snacks,
       pool: env.def.snacks,
-      floor: env.def.floor,
+      floor: compactFloor(),
       rng: makeRng((Date.now() ^ 0x9e3779b9) >>> 0),
     });
     spawnFeedingMeshes();
@@ -578,7 +593,7 @@ export function createWorld(game: Game): World {
     if (!built) return;
     visitorId = id;
     visitorMesh = built;
-    const floor = env.def.floor;
+    const floor = compactFloor();
     const edge = rng() < 0.5 ? -1 : 1;
     built.position.set(edge * (floor.w / 2 - 0.5), 0, rng.range(-floor.d / 3, floor.d / 3));
     built.rotation.y = edge > 0 ? -Math.PI / 2 : Math.PI / 2;
@@ -906,7 +921,7 @@ export function createWorld(game: Game): World {
         agent.brain.held = false;
         agent.held = null;
         agent.tag.visible = false;
-        const floor = env.def.floor;
+        const floor = roamRect();
         const safeX = Number.isFinite(x) ? x : agent.brain.x;
         const safeZ = Number.isFinite(z) ? z : agent.brain.z;
         if (surface) {
@@ -915,8 +930,8 @@ export function createWorld(game: Game): World {
           agent.animator.setPose('sit');
           agent.brain.freeze('sit', 3);
         } else {
-          const clampedX = Math.max(-floor.w / 2 + 0.5, Math.min(floor.w / 2 - 0.5, safeX));
-          const clampedZ = Math.max(-floor.d / 2 + 0.5, Math.min(floor.d / 2 - 0.5, safeZ));
+          const clampedX = Math.max(floor.cx - floor.w / 2 + 0.5, Math.min(floor.cx + floor.w / 2 - 0.5, safeX));
+          const clampedZ = Math.max(floor.cz - floor.d / 2 + 0.5, Math.min(floor.cz + floor.d / 2 - 0.5, safeZ));
           agent.brain.placeAt(clampedX, clampedZ);
           faceViewer(agent);
           agent.animator.setPose('stand');
@@ -946,7 +961,7 @@ export function createWorld(game: Game): World {
             ...env.def.floor,
             radius: arenaRadius(game.getState().party.members.length) + 1.5,
           }
-        : env.def.floor;
+        : roamRect();
 
     // Round a fire with friends, cats mill about; they do not settle down to sleep the way they
     // do beside your desk. Borrowing the livelier 'idle' weight table during a party's focus

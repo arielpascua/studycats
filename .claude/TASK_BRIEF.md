@@ -1,10 +1,10 @@
 # Task Brief
 
-Generated: 2026-08-30T13:47:56.900Z · Tier T1 · Model sonnet · Confidence 0.9 (heuristic) · Advisory
+Generated: 2026-09-04T11:47:28.454Z · Tier T1 · Model sonnet · Confidence 0.9 (heuristic) · Advisory
 
 ## Original request (redacted)
 
-the othe color of cats is outside the box of the body. make the color patches of the cat more surreal
+rival these scenes. also the zoom is super close and the cat roaming area is so tight.
 
 ## Routing (advisory — the orchestrator decides)
 

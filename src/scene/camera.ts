@@ -48,7 +48,9 @@ export interface ShellBox {
  */
 export const FOCUS_WIDE: FocusVolume = {
   center: new THREE.Vector3(0.4, 1.05, -0.5),
-  half: new THREE.Vector3(3.0, 1.25, 2.3),
+  // 4.4 x 3.3 was the widest that still passes tests/framing.test.ts with the shell below it;
+  // the old 3.0 x 2.3 was a close-up of the desk, and the owner said so.
+  half: new THREE.Vector3(4.4, 1.4, 3.3),
 };
 
 /**
@@ -57,7 +59,7 @@ export const FOCUS_WIDE: FocusVolume = {
  */
 export const FOCUS_TALL: FocusVolume = {
   center: new THREE.Vector3(0.4, 1.1, -0.7),
-  half: new THREE.Vector3(2.0, 1.4, 1.7),
+  half: new THREE.Vector3(2.6, 1.5, 2.2),
 };
 
 /**
