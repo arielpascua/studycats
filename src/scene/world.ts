@@ -98,6 +98,8 @@ export interface World {
   nudge(): void;
   setPaused(paused: boolean): void;
   getStats(): { cats: number; snacks: number; particles: number };
+  /** Force a day phase (null = the real clock). For verification only. */
+  setPhaseOverride(phase: DayPhase | null): void;
   dispose(): void;
 }
 
@@ -190,7 +192,11 @@ export function createWorld(game: Game): World {
   let ambientAccumulator = 0;
   /** The live camera position, so cats can be kept off the lens. Set by the app each frame. */
   let cameraPosition: THREE.Vector3 | null = null;
-  let currentPhase: DayPhase = dayPhase();
+  // A forced phase, for verifying a scene at a time of day the clock will not give you. Null
+  // means the real clock. Debug-only; nothing in the product sets it.
+  let phaseOverride: DayPhase | null = null;
+  const phaseNow = (): DayPhase => phaseOverride ?? dayPhase();
+  let currentPhase: DayPhase = phaseNow();
   const rng = makeRng(Date.now() & 0xffff);
 
   particles.setEnabled(!reduced);
@@ -206,6 +212,13 @@ export function createWorld(game: Game): World {
     const slots = state.unlocks.placements[state.settings.environment] ?? {};
     for (const [slot, id] of Object.entries(slots)) {
       if (!id) continue;
+      // A purchased window view has nowhere to hang when the window is a doorway: it repaints
+      // the far distance instead. Only worlds with a backdrop offer setView; elsewhere the plane
+      // still hangs at the window slot as before.
+      if (slot === 'window' && env.setView) {
+        env.setView(id === 'window-city' ? 'city' : id === 'window-hills' ? 'hills' : 'garden');
+        continue;
+      }
       const item = createFurniture(id, slot as SlotId);
       if (!item) continue;
       placed.push(item);
@@ -699,7 +712,7 @@ export function createWorld(game: Game): World {
   }
 
   function applyDayNight(): void {
-    const phase = dayPhase();
+    const phase = phaseNow();
     currentPhase = phase;
     const def = env.def;
     const skyHex = def.sky[phase];
@@ -1111,6 +1124,11 @@ export function createWorld(game: Game): World {
     attachPicking,
 
     getShell: computeShell,
+
+    setPhaseOverride(phase) {
+      phaseOverride = phase;
+      applyDayNight();
+    },
 
     setCameraPosition(position) {
       cameraPosition = position;

@@ -419,3 +419,45 @@ A framing test used to pin the footprint to the exact old rect, with the comment
 across the new floor would be a worse product." That was a deliberate call and it was wrong; the
 test now asserts the invariant that actually matters — the footprint never reaches the far walls
 and only grows toward the viewer.
+
+
+## 13. The garden doors — something to look through the room at
+
+The reference these scenes are measured against is a lofi thumbnail: a muted room whose back
+wall opens onto fiery autumn maples, with everything in the foreground arranged so you look PAST
+it into that. Ours had no far thing. The wall was the last plane and the window was a tinted
+rectangle.
+
+The cozy room's far wall now has floor-to-lintel garden doors (x 0.5–5.7, y 0–3.4), two sliding
+leaves parked at the edges, and a real garden behind: moss, a stone path, a stone lantern, two
+voxel maples, a string of paper lanterns, and a painted far distance closing it all.
+
+### How a hole in a wall keeps the enclosure rule
+
+- **The cut is free.** `buildShellWalls` takes `openings`; `cutWall` emits more boxes into the
+  same merged mesh — piers, sill, lintel — so a doorway costs nothing. `tests/walls.test.ts`
+  asserts the boxes cover the wall minus the opening exactly, with no sliver and no gap.
+- **What you see through it is built, never sky.** A painted backdrop (`props/garden.ts`,
+  `createBackdrop`) closes the garden: one canvas on a quad, repainted only when the day phase
+  changes. It is an **L** — a 13-unit back plane and a 3-unit return on the left — because at
+  azimuth 270 the eye looks through the doorway at a steep angle and a flat backdrop alone leaks
+  past its edge. Measured with the sentinel probe: 0% edge sky at azimuth 180/225/270 ×
+  elevation 14/40 × zoom 0.5/1.2.
+- **Moss sits proud of the floor.** The shadow-receiving wood patch already extends 8.8 units
+  behind the wall; a garden floor at y 0 would z-fight it and read as floorboards.
+
+### Day and night
+
+`SKY` in `garden.ts` is one palette per day phase, and the rule it encodes is the one that keeps
+11pm as pretty as noon: **day = cool room, warm saturated garden; night = warm room, cool dim
+garden.** The lantern's point light is off by day and comes up at dusk — the one warm point
+outside after dark.
+
+### The window slot is no longer a place
+
+The shop's two purchasable window views used to hang a plane at x 2.0 — dead centre of the new
+doorway. A room with a backdrop exposes `setView`, and `rebuildFurniture` calls it for a placed
+window view instead of hanging a plane: the far distance repaints as a skyline or green hills.
+Saved placements still resolve; nothing ever floats in the opening.
+
+Cozy room: 95 → 110 draw calls.

@@ -11,6 +11,7 @@
  * suspended laptop and a backgrounded phone all resolve to the same remaining time.
  */
 
+import type { DayPhase } from './core/time';
 import * as THREE from 'three';
 import { bus } from './core/events';
 import { formatClock } from './core/time';
@@ -390,6 +391,8 @@ function boot(): void {
   (globalThis as unknown as { __swc?: unknown }).__swc = {
     ready: true,
     stats: () => ({ ...world.getStats(), draw: renderer.stats() }),
+    /** Force a day phase so a scene can be checked at noon at midnight. null = the clock. */
+    setPhase: (phase: DayPhase | null) => world.setPhaseOverride(phase),
     // Render diagnostics for the perf/quality gate: how many meshes actually participate in the
     // shadow pass, and whether the shadow map is switched on at all.
     shadows: () => {
