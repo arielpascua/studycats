@@ -461,3 +461,48 @@ window view instead of hanging a plane: the far distance repaints as a skyline o
 Saved placements still resolve; nothing ever floats in the opening.
 
 Cozy room: 95 → 110 draw calls.
+
+## 14. Vistas — the far thing in every solo world
+
+Section 13 gave the cozy room a far thing. The other three worlds get theirs through one seam
+rather than three rewrites: `VISTAS` in `environments/index.ts` maps a world id to a hook, and
+each hook lives in its own file under `environments/vistas/`.
+
+### The seam
+
+A vista receives the world's own `BoxBatch` **before it is built**, a group for what cannot
+merge (textured quads, unlit glow, lights), and the world's definition. It returns backdrops,
+night lights, obstacles and, optionally, wall openings and an `update`. Two consequences shape
+`buildEnvironment`:
+
+- **Walls are built after the world, not before.** The café's shopfront window is an opening
+  the vista asks for; the walls cannot be cut until the vista has spoken.
+- **Boxes in a colour the world already uses are free.** A vista's picnic flowers, pier planks
+  or café chairs land in the same merged meshes as the room. Measured cost of all three vistas:
+  picnic 72 calls, bonfire 54, café 78 — every world still under a third of the 300 budget.
+
+### What each world looks past
+
+- **Picnic hill** — a pond ring with a reed bank, a pier with a lantern, a far manor whose
+  windows light at night, and a painted skyline behind a tree line. A moon path shimmers on the
+  water after dark.
+- **Bonfire night** — the clearing became a lakeshore: a stepped lake, a far shore of pine
+  silhouettes with a notch the low moon sits in, a mountain ridge behind the horizon rim, a
+  lit tent and a canoe. The ridge exists for elevation 14, where the eye looks over the rim.
+- **Rainy café** — the far wall is a shopfront window (x 0.5–5.5, y 0.45–3.5) onto a rainy
+  street: pastel façades, a street lamp, an awning, rain streaks that scroll. The shop's window
+  views repaint the street instead of hanging a plane in the opening.
+
+### Verified the same way as the doors
+
+Sentinel probe, azimuth 180/225/270 × elevation 14/40 × zoom 0.5/1.2, day and night, per
+world: **0% edge sky at all 20 combinations in all three.** Two things the probe taught:
+
+- **Settle on the live camera, not the targets.** `camera()` reports where the rig is *going*;
+  a probe that waits for those to stop moving fires mid-flight. The sweep now waits for the
+  eye's position to hold still.
+- **A backdrop must end inside the wall slab.** `buildShellWalls` makes walls 0.24 thick, from
+  the shell edge inward. The café's return leg first ended 0.06 past the inner face and showed
+  as a bright edge-on sliver above the desk. The debug surface grew `bounds(name)` and
+  `pick(x, y)` — a raycast through a pixel — because a sliver two pixels wide is not something
+  a colour sample can name.

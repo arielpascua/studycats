@@ -11,10 +11,13 @@ import { ENVIRONMENTS, type EnvironmentDef, type EnvironmentId } from '../../dat
 import { C, hex, mixHex, PALETTE } from '../../data/palette';
 import type { DayPhase } from '../../core/time';
 import { BoxBatch, box, boxGeo, disposeTree, flat, mergedBoxes, type BoxSpec } from '../voxel';
-import { createLaptop, createMug, createPlant, createWindow, type Laptop, type Mug, type Window } from '../props/desk';
+import { createLaptop, createMug, createPlant, type Laptop, type Mug, type Window } from '../props/desk';
 import type { Obstacle } from '../cats/catBrain';
 import { buildRoom as buildPartyRoom, roomMetrics, type BuiltRoom } from './room';
 import { addLantern, addMaple, addSteppingStones, createBackdrop, createLanternGlow, MOSS, type Backdrop, type GardenView } from '../props/garden';
+import { addPicnicVista } from './vistas/picnic';
+import { addBonfireVista } from './vistas/bonfire';
+import { addCafeVista, CAFE_WINDOW } from './vistas/cafe';
 import { DEFAULT_ROOM, roomEnvDef, type RoomId } from '../../data/rooms';
 
 export interface BuiltEnvironment {
@@ -571,7 +574,11 @@ function buildRoom(def: EnvironmentDef): {
  * room's is built into buildRoom itself because it also reshapes the room; these three are
  * additive and live in ./vistas/.
  */
-const VISTAS: Partial<Record<EnvironmentId, VistaHook>> = {};
+const VISTAS: Partial<Record<EnvironmentId, VistaHook>> = {
+  picnic: addPicnicVista,
+  bonfire: addBonfireVista,
+  cafe: addCafeVista,
+};
 
 /** The garden doors' opening in the cozy room's far wall. Floor to lintel, so a cat can sit on the sill. */
 const DOOR_X0 = 0.5;
@@ -727,7 +734,7 @@ function buildBonfire(def: EnvironmentDef, vista?: VistaHook): { statics: THREE.
   };
 }
 
-function buildCafe(def: EnvironmentDef, vista?: VistaHook): { statics: THREE.Group; obstacles: Obstacle[]; windowProp: Window; lamps: THREE.PointLight[]; vista: VistaResult | undefined } {
+function buildCafe(def: EnvironmentDef, vista?: VistaHook): { statics: THREE.Group; obstacles: Obstacle[]; windowProp: Window | null; lamps: THREE.PointLight[]; vista: VistaResult | undefined } {
   const batch = new BoxBatch();
 
   // Chequerboard café floor
@@ -743,14 +750,13 @@ function buildCafe(def: EnvironmentDef, vista?: VistaHook): { statics: THREE.Gro
   }
   batch.addMany(tiles, hex(PALETTE.paper2));
 
-  batch.add({
-    w: shell.maxX - shell.minX,
-    h: 0.3,
-    d: 0.32,
-    x: (shell.minX + shell.maxX) / 2,
-    y: 1.0,
-    z: shell.minZ + 0.18,
-  }, C.wood);
+  // The wall bar is split around the shopfront window, or it runs straight across the glass.
+  for (const [x0, x1] of [
+    [shell.minX, CAFE_WINDOW.from - 0.08],
+    [CAFE_WINDOW.to + 0.08, shell.maxX],
+  ] as Array<[number, number]>) {
+    batch.add({ w: x1 - x0, h: 0.3, d: 0.32, x: (x0 + x1) / 2, y: 1.0, z: shell.minZ + 0.18 }, C.wood);
+  }
 
   // Counter + cups
   batch.add({ w: 2.6, h: 1.05, d: 0.8, x: -3.6, y: 0.52, z: -2.4 }, C.woodDark);
@@ -772,9 +778,10 @@ function buildCafe(def: EnvironmentDef, vista?: VistaHook): { statics: THREE.Gro
   const statics = batch.build('cafe');
   statics.add(vistaGroup);
 
-  const windowProp = createWindow('city');
-  windowProp.group.position.set(2.4, 0, shell.minZ + 0.26);
-  statics.add(windowProp.group);
+  // No window prop: the far wall is a shopfront window now (see vistas/cafe.ts), and the old
+  // prop at x 2.4 hung exactly where the opening is. The shop's window views repaint the
+  // street backdrop via setView instead.
+  const windowProp: Window | null = null;
 
   // Two warm pendant lamps
   const lamps: THREE.PointLight[] = [];

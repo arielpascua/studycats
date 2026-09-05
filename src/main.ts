@@ -575,7 +575,38 @@ function boot(): void {
       zoom: rig.getZoom(),
       mood: rig.getMood(),
       position: rig.camera.position.toArray().map((n) => Math.round(n * 100) / 100),
+      fov: Math.round(rig.camera.fov * 10) / 10,
+      aspect: Math.round(rig.camera.aspect * 100) / 100,
+      far: rig.camera.far,
     }),
+    /** What is under a viewport pixel: the nearest few hits, named by their parent chain. */
+    pick: (px: number, py: number) => {
+      const el = renderer.renderer.domElement;
+      const rect = el.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((px - rect.left) / rect.width) * 2 - 1, -(((py - rect.top) / rect.height) * 2 - 1));
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, rig.camera);
+      const r = (n: number) => Math.round(n * 100) / 100;
+      return ray.intersectObjects(world.scene.children, true).slice(0, 3).map((h) => {
+        const mat = (h.object as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+        const chain: string[] = [];
+        for (let o: THREE.Object3D | null = h.object; o; o = o.parent) chain.push(o.name || o.type);
+        return {
+          chain: chain.join(' < '),
+          point: h.point.toArray().map(r),
+          distance: r(h.distance),
+          color: mat && mat.color ? '#' + mat.color.getHexString() : null,
+        };
+      });
+    },
+    /** World-space bounds of a named scene object, so a probe can check where a thing really is. */
+    bounds: (name: string) => {
+      const obj = world.scene.getObjectByName(name);
+      if (!obj) return null;
+      const box = new THREE.Box3().setFromObject(obj);
+      const r = (n: number) => Math.round(n * 100) / 100;
+      return { type: obj.type, visible: obj.visible, min: box.min.toArray().map(r), max: box.max.toArray().map(r) };
+    },
     dispose() {
       hud.dispose();
       panels.dispose();
