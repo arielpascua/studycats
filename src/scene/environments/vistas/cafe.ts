@@ -645,7 +645,10 @@ export function addCafeVista(ctx: VistaContext): VistaResult {
       // Rain runs down the glass: the whole sheet scrolls, which reads as water. Frozen under
       // reduced motion, where a sheet of still streaks is simply a wet window.
       if (!reducedMotion) {
-        glass.tex.offset.y = (glass.tex.offset.y - dt * 0.22) % 1;
+        // The offset must INCREASE for the sheet to move down the glass: a canvas texture is
+        // flipped (flipY), so v runs up the quad and a smaller offset samples lower in the image,
+        // which pushes the picture up. This shipped upward once.
+        glass.tex.offset.y = (glass.tex.offset.y + dt * 0.22) % 1;
       }
       if (phase !== lastPhase) {
         lastPhase = phase;
