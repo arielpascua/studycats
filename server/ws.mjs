@@ -10,9 +10,12 @@
  * clients that vanished without a close frame so they show as disconnected at once rather than
  * when the sweeper notices.
  *
- * The client address is the rightmost `x-forwarded-for` entry when the header is present —
- * behind exactly one trusted proxy (Railway's edge) that is the address the proxy saw, and the
- * one entry a client cannot forge — else the socket's own peer address.
+ * The client address comes from `x-forwarded-for`, counted from the RIGHT by the number of
+ * trusted proxy hops in front of us (`PARTY_TRUSTED_HOPS`, default 2: Railway's edge appends the
+ * client, its internal router appends the edge — observed in production). Entries a client
+ * prepends itself sit further left and are never reached, so the address cannot be forged; and
+ * when the header carries a different number of hops than configured the server says so once,
+ * because a wrong count means every player shares one rate bucket. No header → the peer address.
  *
  * Everything the service needs from a socket is the small `conn` object built here.
  */
@@ -54,24 +57,32 @@ export function sameOrigin(origin, host, allowMissing) {
  * The address a request came from, as far as it can be trusted. See the header comment.
  * @param {import('node:http').IncomingMessage} req
  */
-export function clientAddress(req) {
+const TRUSTED_HOPS = Math.max(1, Number(process.env.PARTY_TRUSTED_HOPS) || 2);
+let warnedHops = false;
+
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {number} [trustedHops] proxy entries at the right end that are ours, not the client's
+ */
+export function clientAddress(req, trustedHops = TRUSTED_HOPS) {
   const forwarded = req.headers['x-forwarded-for'];
   const header = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
   if (typeof header === 'string' && header.trim()) {
     const hops = header.split(',').map((h) => h.trim()).filter(Boolean);
-    // More than one hop means something between the edge and us is also appending, and the
-    // rightmost entry may then be that something rather than the client: every player would
-    // share one rate bucket. Say so once, without the addresses themselves.
-    if (hops.length > 1 && !warnedHops) {
+    if (hops.length !== trustedHops && !warnedHops) {
       warnedHops = true;
-      console.warn(`party: x-forwarded-for carries ${hops.length} hops; using the rightmost — check the proxy chain`);
+      console.warn(
+        `party: x-forwarded-for carries ${hops.length} hops but PARTY_TRUSTED_HOPS is ${trustedHops} — ` +
+          'players may be sharing one rate bucket; set it to the real number of proxies',
+      );
     }
-    const last = hops.at(-1);
-    if (last) return last;
+    // The client is the entry just left of the trusted tail. With fewer entries than trusted
+    // hops (a direct connection to a mis-set server) the leftmost is the best there is.
+    const pick = hops[Math.max(0, hops.length - trustedHops)];
+    if (pick) return pick;
   }
   return req.socket?.remoteAddress ?? 'unknown';
 }
-let warnedHops = false;
 
 /**
  * @param {import('node:http').Server} httpServer

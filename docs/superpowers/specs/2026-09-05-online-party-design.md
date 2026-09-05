@@ -180,7 +180,10 @@ registry and is folded into snapshots.
   under either key, so a fresh device key does not buy a fresh allowance.
 - One `hello` per socket; a second closes it (4002). At most 60 hellos per address per 10
   minutes (4003), and at most 32 open sockets per address: identities are free to mint, so
-  minting is slow. The address is the rightmost `x-forwarded-for` entry behind Railway's proxy.
+  minting is slow. The address is read from `x-forwarded-for` counted from the right by
+  `PARTY_TRUSTED_HOPS` (default 2: Railway's edge appends the client, its router appends the
+  edge — observed in production); a mismatch between the header's hop count and that setting is
+  logged once, because a wrong count puts every player in one bucket.
 - Cheers and hearth credits are single atomic `update … set x = x + …` statements, never
   read-modify-write, so two members acting in the same instant both count.
 - Names and cat names have control and format characters stripped (`\p{Cc}\p{Cf}\p{Co}\p{Cn}`,

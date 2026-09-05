@@ -506,3 +506,43 @@ world: **0% edge sky at all 20 combinations in all three.** Two things the probe
   as a bright edge-on sliver above the desk. The debug surface grew `bounds(name)` and
   `pick(x, y)` — a raycast through a pixel — because a sliver two pixels wide is not something
   a colour sample can name.
+
+## 15. The party, now with other people in it
+
+Party mode was built as offline cat cards under a rule that has since been reversed (PRODUCT.md,
+2026-08-30). It is now real: a host gets a six-letter code, friends on their own devices join it,
+and every cat sits in the same room to the same clock. The design of record is
+`docs/superpowers/specs/2026-09-05-online-party-design.md`; what belongs here is how it looks and
+what it must never do.
+
+### The panel leads with the truth about data
+
+The first thing in the panel is one line of state and the disclosure that replaced "nothing
+leaves this device": what is sent (your cat's name, breed, outfit and bond level, and the name
+you type), what is not (your save, what you are studying), and that leaving deletes the rows.
+FORGET ME ON THE SERVER sits at the bottom, two taps, because an identity you cannot delete is not
+one you were asked to consent to.
+
+### One cat, one clock, one hearth
+
+- The roster is the scene's roster: the live party is projected into the same `PartyState` the
+  arena already draws, so a guest from another device is drawn exactly like a cat card guest was.
+  Self is drawn from the local collection; everyone else from their card.
+- The host runs the clock. A member's start, pause, reset and skip are inert and the HUD says so
+  in one line — "the host runs the clock" — rather than with a disabled button and no reason.
+- The hearth lights in three shared sessions whatever the party size; the prize pays once, on the
+  crossing, on every device that was there for it.
+
+### What the save never learns
+
+While a party is live the save file and the export carry the roster and room from *before* it
+started. A friend's name, a friend's cat and the device key are not in `study-with-cats:save`
+under any path out of the party — leave, kicked, closed, replaced, connection lost, forget — and
+the end-to-end journey asserts it.
+
+### Verified
+
+Two browser contexts against `node server.mjs`: create → join by a lower-case, spaced code → both
+rosters show both cats → host starts, guest's clock runs and is locked → cheer arrives → host ends
+→ both offline, host's save clean. 226 unit tests across the pure core, the protocol, the memory
+store and the service; the same journey again on Railway with Postgres after deploy.

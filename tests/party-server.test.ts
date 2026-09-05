@@ -24,7 +24,7 @@ import {
 } from '../server/protocol.mjs';
 import { createMemoryStore } from '../server/store-memory.mjs';
 import { createPartyService } from '../server/rooms.mjs';
-import { attachPartyServer } from '../server/ws.mjs';
+import { attachPartyServer, clientAddress } from '../server/ws.mjs';
 
 type Msg = Record<string, any>;
 
@@ -549,6 +549,21 @@ describe('party service', () => {
 });
 
 /* ------------------------------------------------------------------ socket */
+
+describe('clientAddress', () => {
+  const req = (xff: string | undefined, remote = '10.9.9.9') => ({ headers: xff === undefined ? {} : { 'x-forwarded-for': xff }, socket: { remoteAddress: remote } });
+  it('reads the client just left of the trusted proxy tail', () => {
+    // Railway: edge appends the client, the internal router appends the edge — two trusted hops.
+    expect(clientAddress(req('203.0.113.7, 10.0.0.2') as any, 2)).toBe('203.0.113.7');
+    // Whatever a client prepends sits further left and is never reached.
+    expect(clientAddress(req('6.6.6.6, 203.0.113.7, 10.0.0.2') as any, 2)).toBe('203.0.113.7');
+    // One trusted hop: the rightmost entry.
+    expect(clientAddress(req('6.6.6.6, 203.0.113.7') as any, 1)).toBe('203.0.113.7');
+  });
+  it('falls back to the peer address without the header', () => {
+    expect(clientAddress(req(undefined, '192.168.1.5') as any, 2)).toBe('192.168.1.5');
+  });
+});
 
 describe('websocket transport', () => {
   let server: any;
