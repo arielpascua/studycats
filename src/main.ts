@@ -437,6 +437,9 @@ function boot(): void {
       };
     },
     timer: () => ({ mode: game.timer().mode, running: game.timer().running, remaining: remainingAt(game.timer(), Date.now()) }),
+    online: () => game.online(),
+    /** The roster as the scene sees it — live while online, the offline stash otherwise. */
+    party: () => game.party(),
 
     /**
      * How enclosed does the room feel — as a number rather than an opinion about a screenshot.

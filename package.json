@@ -18,7 +18,9 @@
     "start": "node server.mjs"
   },
   "dependencies": {
+    "postgres": "^3.4.9",
     "three": "^0.180.0",
+    "ws": "^8.21.3",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

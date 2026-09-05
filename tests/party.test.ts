@@ -425,3 +425,10 @@ describe('a party you are not in is not your party', () => {
     expect(isReady(party)).toBe(true);
   });
 });
+
+describe('sanitizePlayerName strips what a person did not type', () => {
+  it('drops control and bidi characters but keeps the zero-width joiner', () => {
+    expect(sanitizePlayerName('A\u202EBC\u0007')).toBe('ABC');
+    expect(sanitizePlayerName('a\u200Db')).toBe('a\u200Db');
+  });
+});

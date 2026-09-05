@@ -8,6 +8,7 @@
 
 import type { TimerMode } from './timer';
 import type { EnvironmentId } from '../data/environments';
+import type { OnlineStatus } from './party-online';
 
 export interface GameEvents {
   /** Timer moved to a new mode. `natural` is false when the user pressed skip. */
@@ -38,6 +39,8 @@ export interface GameEvents {
   'visitor:logged': { id: string };
 
   'env:changed': { environment: EnvironmentId };
+  /** The online party moved: a snapshot, a status change or a server error. The panel re-renders. */
+  'party:changed': { status: OnlineStatus };
   'settings:changed': undefined;
   'save:written': undefined;
   'toast': { title: string; body?: string; icon?: string; tone?: 'default' | 'reward' | 'gentle' };

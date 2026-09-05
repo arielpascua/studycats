@@ -70,6 +70,12 @@ export function mountPanels(container: HTMLElement, deps: PanelDeps): PanelHost 
   }
 
   function render(): void {
+    // A rebuild must not throw a keyboard user back to the top of the panel. The party panel
+    // rebuilds on every server frame, so remember where focus was — by id, since the old node
+    // is about to be gone — and put it back on its successor.
+    const active = document.activeElement as HTMLElement | null;
+    const keepFocus = active && active.id && container.contains(active) ? active.id : null;
+
     clear(container);
     if (!current) return;
 
@@ -94,9 +100,11 @@ export function mountPanels(container: HTMLElement, deps: PanelDeps): PanelHost 
     panel.appendChild(buildBody(current));
     container.appendChild(panel);
 
-    // Focus the panel's first control so keyboard users land inside it.
+    // Focus the panel's first control so keyboard users land inside it — unless they were
+    // already somewhere in here, in which case they stay there.
+    const again = keepFocus ? panel.querySelector<HTMLElement>(`#${CSS.escape(keepFocus)}`) : null;
     const first = panel.querySelector<HTMLElement>('button, input, select, textarea, [tabindex]');
-    first?.focus();
+    (again ?? first)?.focus();
   }
 
   function rerender(): void {
@@ -154,6 +162,11 @@ export function mountPanels(container: HTMLElement, deps: PanelDeps): PanelHost 
     }),
     bus.on('cat:bond', () => {
       if (current === 'cats') rerender();
+    }),
+    // The party panel is a view of the server's last frame; every frame, status change or error
+    // redraws it.
+    bus.on('party:changed', () => {
+      if (current === 'party') rerender();
     }),
   ];
 

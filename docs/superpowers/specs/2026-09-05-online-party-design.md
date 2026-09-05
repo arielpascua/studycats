@@ -53,7 +53,7 @@ parties hold at most 8 members, so a snapshot is under 2 KB and there is nothing
 | `cheer` | — | member |
 | `timer` | `timer: WireTimer` | host |
 | `focus` | `minutes: number` | host, once per finished focus session |
-| `forget` | — | anyone; deletes the player |
+| `forget` | — | anyone; deletes the player; answered by `forgotten`, and only then does the client drop its key |
 
 ### Server → client
 
@@ -64,6 +64,7 @@ parties hold at most 8 members, so a snapshot is under 2 KB and there is nothing
 | `party` | `party: PartySnapshot`, `serverNow` |
 | `left` | `reason: 'left' \| 'kicked' \| 'closed' \| 'replaced'` |
 | `error` | `code`, `message` (user-facing, lower-case, the panel shows it verbatim) |
+| `forgotten` | — (the player's rows are gone; the client deletes its device key on this and nothing else) |
 
 ### Shapes
 
@@ -95,8 +96,10 @@ A kick rotates the code.
 
 ### Clock
 
-`offset = localNow − serverNow`, taken from the `pong` with the smallest round trip out of three
-pings at connect. A member's local deadline is `wire.endsAt + offset` (a fast local clock pushes
+`offset = localNow − serverNow`, taken from the sample with the smallest round trip: the `welcome`
+itself (the answer to `hello`, which arrives before any party frame, so a resumed party is never
+adopted with an offset of zero) and three pings sent right after it. A later, sharper sample that
+moves the offset by 250 ms or more makes a member re-adopt the deadline and a host re-publish it. A member's local deadline is `wire.endsAt + offset` (a fast local clock pushes
 the deadline later, r8's sign fix). The host converts the other way when publishing.
 
 ## 5. Server
@@ -115,6 +118,9 @@ blip must not restart the container and drop every live socket).
 | `server/ws.mjs` | `attachPartyServer(httpServer, service)`: `ws` upgrade on `/party/ws`, same-origin check, hello timeout, per-socket rate limit (20 frames / 10 s), 4 KB frame cap, 30 s ping keepalive |
 
 Store selection: `DATABASE_URL` set → Postgres; unset → memory, with one boot log line saying so.
+The request handler is wrapped so no single request can take the process (and every live party)
+down, and every response carries `x-frame-options: DENY`, `frame-ancestors 'none'` and HSTS.
+A missing Origin on the upgrade is refused unless `PARTY_ALLOW_NO_ORIGIN=1` is set explicitly.
 
 ### Schema (`server/schema.sql`)
 
@@ -170,7 +176,15 @@ registry and is folded into snapshots.
   close; players with no seat and `last_seen_at` older than 90 days are deleted.
 - Two sockets for one player: the newer wins, the older gets `left reason:'replaced'` and must
   **not** reconnect on that reason.
-- Join failures are rate-limited per player: 5 wrong codes per minute.
+- Join failures are rate-limited per player AND per client address: 5 wrong codes per minute
+  under either key, so a fresh device key does not buy a fresh allowance.
+- One `hello` per socket; a second closes it (4002). At most 60 hellos per address per 10
+  minutes (4003), and at most 32 open sockets per address: identities are free to mint, so
+  minting is slow. The address is the rightmost `x-forwarded-for` entry behind Railway's proxy.
+- Cheers and hearth credits are single atomic `update … set x = x + …` statements, never
+  read-modify-write, so two members acting in the same instant both count.
+- Names and cat names have control and format characters stripped (`\p{Cc}\p{Cf}\p{Co}\p{Cn}`,
+  keeping the zero-width joiner) on both sides before they reach any screen or the database.
 
 ## 6. Client
 
@@ -232,7 +246,9 @@ the panel re-renders on it.
   `focus { minutes }` on a natural focus→break transition. Progress is
   `bonfireProgress(sharedMinutes, members, onlineBonfireGoal(members, focusMin))` with
   `onlineBonfireGoal = 3 × focusMin × members` (three shared sessions light it, any party size).
-  The maxed reward is granted once per party per device (`runtime.hearthRewardedFor = partyId`).
+  The maxed reward is granted when the party CROSSES the goal in this session (the previous
+  snapshot below it, this one at it), once per party per device. A first snapshot that already
+  shows a roaring fire is a resume or a late arrival, not a crossing, so a reload is never paid.
 - Leaving, `left`, or a terminal `offline` restores the stash, sets solo, and toasts why.
 
 ## 7. UI

@@ -59,11 +59,23 @@ export function partyLabel(catName: string, playerName: string): string {
   return player ? `${cat} (${player})` : cat;
 }
 
-export function sanitizePlayerName(input: unknown): string {
+/**
+ * Control and format characters are stripped from every name that can reach another screen: a
+ * bidi override in a guest's name would turn the whole roster label inside out. The zero-width
+ * joiner is kept so emoji sequences survive. The server applies the same rule.
+ */
+const CONTROL_RE = /(?!\u200D)[\p{Cc}\p{Cf}\p{Co}\p{Cn}]/gu;
+
+export function cleanText(input: unknown, max: number): string {
   return String(input ?? '')
+    .replace(CONTROL_RE, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, MAX_PLAYER_NAME);
+    .slice(0, max);
+}
+
+export function sanitizePlayerName(input: unknown): string {
+  return cleanText(input, MAX_PLAYER_NAME);
 }
 
 /* ------------------------------------------------------------------ roster */
@@ -188,14 +200,19 @@ export function bonfireGoal(memberCount: number): number {
   return 25 * n;
 }
 
-/** 0..1 through the current stage, and the stage itself (0..BONFIRE_STAGES). */
-export function bonfireProgress(sharedMinutes: number, memberCount: number): {
+/**
+ * 0..1 through the current stage, and the stage itself (0..BONFIRE_STAGES).
+ *
+ * The goal defaults to the cat-card party's scale; an online party passes its own, because its
+ * minutes are credited per connected member and would light the same fire too soon.
+ */
+export function bonfireProgress(sharedMinutes: number, memberCount: number, goal: number = bonfireGoal(memberCount)): {
   stage: number;
   into: number;
   goal: number;
   maxed: boolean;
 } {
-  const goal = bonfireGoal(memberCount);
+  if (!Number.isFinite(goal) || goal <= 0) goal = bonfireGoal(memberCount);
   const perStage = goal / BONFIRE_STAGES;
   const minutes = Math.max(0, sharedMinutes || 0);
   const raw = minutes / perStage;
@@ -334,7 +351,7 @@ export function normalizeParty(input: unknown, knownCatIds: readonly string[]): 
     const guest =
       m.guest && typeof m.guest === 'object' && isBreedId((m.guest as GuestCat).breed)
         ? {
-            name: String((m.guest as GuestCat).name ?? '').slice(0, 24) || 'Cat',
+            name: cleanText((m.guest as GuestCat).name, 24) || 'Cat',
             breed: (m.guest as GuestCat).breed,
             outfit: sanitizeOutfit((m.guest as GuestCat).outfit),
             bond: Math.max(1, Math.min(10, Math.round(Number((m.guest as GuestCat).bond) || 1))),

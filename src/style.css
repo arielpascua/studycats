@@ -373,6 +373,17 @@ body {
   box-shadow: var(--lift-sm);
 }
 
+/* A button that should be easy to find and hard to hit by accident: no lift, label-sized type,
+   recessed paper. Used for the one destructive thing in the party panel. */
+.btn--quiet {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: var(--s2) var(--s4);
+  font-size: var(--fs-label);
+  background: var(--paper-2);
+  box-shadow: none;
+}
+
 .btn:disabled,
 .icon-btn:disabled {
   cursor: not-allowed;
@@ -437,6 +448,31 @@ body {
 
 .dot[data-filled='true'] {
   background: var(--pink);
+}
+
+/* The same dot, as a presence light: lit, out, or waiting. */
+.dot--on {
+  background: var(--mint);
+}
+
+.dot--off {
+  background: var(--paper);
+  border-color: var(--ink-faint);
+}
+
+.dot--busy {
+  background: var(--butter);
+}
+
+/* The caption for a clock that belongs to somebody else. */
+.hud__note {
+  display: block;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  text-align: center;
+  color: var(--ink-soft);
 }
 
 .timer__clock {
@@ -756,6 +792,17 @@ body {
   color: var(--ink-soft);
 }
 
+/* Something went wrong and the server said so. Brick edge, not a red box: it is a note that
+   needs reading, not an alarm. */
+.note--warn {
+  padding: var(--s3) var(--s4);
+  color: var(--ink);
+  background: var(--paper-2);
+  border: var(--border);
+  border-left: 6px solid var(--danger);
+  border-radius: var(--r-sm);
+}
+
 /* --------------------------------------------------------------- listings */
 
 .card {
@@ -1038,6 +1085,127 @@ input[type='range'] {
 
 .quest[data-done='true'] .quest__fill {
   background: var(--coin);
+}
+
+/* ------------------------------------------------------------------ party */
+
+.party-status {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.party-status .dot,
+.party-member .dot {
+  flex: 0 0 auto;
+}
+
+/* The code is the party. Big enough to read off someone else's phone across a table. */
+.party-code {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+#party-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--s3) var(--s4);
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: var(--ink);
+  background: var(--butter);
+  border: var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--lift-sm);
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+.field .party-code-input {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.party-roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.party-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  padding: var(--s3) var(--s4);
+  font-size: 0.875rem;
+  background: var(--paper-2);
+  border: var(--border);
+  border-radius: var(--r-sm);
+}
+
+.party-member__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.party-member[data-connected='false'] .party-member__name {
+  color: var(--ink-faint);
+}
+
+.party-member__swatch {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+}
+
+.party-member__tag {
+  letter-spacing: 0.06em;
+}
+
+.party-member__tag--you {
+  background: var(--pink);
+}
+
+/* Cheer and SEND HOME sit on the right; when the name is long they drop to their own line,
+   still right-aligned, rather than squeezing it. */
+.party-member__actions {
+  display: flex;
+  gap: var(--s2);
+  margin-left: auto;
+}
+
+.party-member__actions .btn {
+  min-height: 44px;
+  min-width: 0;
+  padding: var(--s2) var(--s4);
+  font-size: var(--fs-label);
+}
+
+.party-forget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-top: var(--s3);
+  border-top: 2px solid var(--lav);
 }
 
 /* ------------------------------------------------------------------ stats */

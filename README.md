@@ -3,8 +3,12 @@
 > A pomodoro timer that is also a place. Focus sessions earn fish coins; fish coins grow a
 > diorama of voxel cats. Finish a session and they get a snack.
 
-No accounts, no ads, no analytics, no network calls after first load, and no way to spend real
-money. Everything — including the fonts, the audio and the 3D — is local.
+No ads, no analytics, and no way to spend real money. Single player is entirely local — the
+fonts, the audio, the 3D and your save never leave the device, and there is no account. The one
+thing that talks to a server is the **party**: a host gets a six-letter code, friends on their own
+devices join it, and everyone's cat shows up in the same room to the same clock. What travels is
+your cat's name, breed, outfit and bond level and the name you type — never the save, never what
+you are studying — under an opaque device key you can delete from the panel at any time.
 
 ![The cozy room](docs/screenshots/01-cozy-room-desktop.png)
 
@@ -75,7 +79,7 @@ missed day is reported as weather. See `PRODUCT.md`.
 
 ## Verification
 
-- `tests/` — 166 unit tests over the pure core, including a 3 000-operation fuzz that asserts the
+- `tests/` — 226 unit tests over the pure core and the party server, including a 3 000-operation fuzz that asserts the
   feeding invariants after **every** operation, and a venue suite that pins the camera/ceiling
   invariant which once rendered the whole arena black during break time.
 - `tools/geometry-probe.mjs` — measures computed layout in a real browser at 1440px and 390px
@@ -90,6 +94,8 @@ missed day is reported as weather. See `PRODUCT.md`.
 - `PRODUCT.md` — audience, voice, and the anti-references the UI must never resemble.
 - `DESIGN.md` — the design contract: tokens, type, motion, and measured contrast ratios.
 - `.claude/specs/study-with-cats-3d.spec.md` — the authoritative spec and acceptance criteria.
+- `docs/superpowers/specs/2026-09-05-online-party-design.md` — the online party: protocol, schema,
+  clock, and what leaves the device.
 
 ## Licence / assets
 

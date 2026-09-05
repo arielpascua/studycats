@@ -48,9 +48,37 @@ export function mountHud(game: Game, onOpenPanel: (id: string) => void): Hud {
 
   let lastClockText = '';
   let lastTitle = '';
+  let lastLocked: boolean | null = null;
   const listeners: Array<() => void> = [];
 
   taskInput.value = game.timer().task;
+
+  // The caption for a clock that is not yours. Built here rather than in index.html because it
+  // only means anything once the store has an online party to speak of.
+  const hostNote = el('small', { id: 'hud-host-note', class: 'hud__note', text: 'the host runs the clock' });
+  hostNote.hidden = true;
+  qs('.timer__controls').after(hostNote);
+
+  /* ---------------------------------------------------------------- host */
+
+  /**
+   * In an online party the host runs the clock and everyone else's controls are inert. The
+   * store already refuses the calls; this makes the refusal visible instead of a button that
+   * clicks and does nothing.
+   */
+  function refreshHost(): void {
+    const online = game.online();
+    const locked = online.status !== 'offline' && !online.isHost;
+    if (locked === lastLocked) return;
+    lastLocked = locked;
+    for (const btn of [startBtn, resetBtn, skipBtn]) {
+      btn.disabled = locked;
+      if (locked) btn.setAttribute('aria-describedby', 'hud-host-note');
+      else btn.removeAttribute('aria-describedby');
+    }
+    hostNote.hidden = !locked;
+    timerCard.setAttribute('data-locked', locked ? 'true' : 'false');
+  }
 
   /* --------------------------------------------------------------- chips */
 
@@ -165,6 +193,7 @@ export function mountHud(game: Game, onOpenPanel: (id: string) => void): Hud {
     }
 
     refreshDots();
+    refreshHost();
   }
 
   /* ------------------------------------------------------------ controls */
@@ -262,10 +291,15 @@ export function mountHud(game: Game, onOpenPanel: (id: string) => void): Hud {
     bus.on('timer:transition', ({ to }) => {
       announce(`${modeLabel(to)} — ${formatClock(durationFor(to, game.timer().settings))}`);
     }),
+    bus.on('party:changed', () => {
+      refreshHost();
+      update(Date.now());
+    }),
   ];
 
   refreshChips();
   refreshScenes();
+  refreshHost();
   update(Date.now());
 
   return {
@@ -275,6 +309,7 @@ export function mountHud(game: Game, onOpenPanel: (id: string) => void): Hud {
     dispose() {
       for (const un of unsubs) un();
       for (const off of listeners) off();
+      hostNote.remove();
     },
   };
 }
